@@ -1007,19 +1007,29 @@ function importKalshiCSV(text) {
 
   if (!positions.length) { showToast('❌ No positions found in CSV', 'var(--red)'); return; }
 
+  // Auto-calculate bankroll from total exposure
+  var totalExposure = positions.reduce(function(sum, p) {
+    return sum + (p.qty * p.curr / 100);
+  }, 0);
+
   var msg = 'Import ' + positions.length + ' positions from Kalshi CSV?\n\nOK = Replace all\nCancel = Merge with existing';
   if (S.positions.length === 0 || confirm(msg)) {
     S.positions = positions;
+    S.bank = parseFloat(totalExposure.toFixed(2));
   } else {
     var existing = S.positions.map(function(p) { return p.ticker || p.name; });
     var newOnes  = positions.filter(function(p) { return !existing.includes(p.ticker || p.name); });
     S.positions  = S.positions.concat(newOnes);
+    // Recalculate bankroll from all positions
+    S.bank = parseFloat(S.positions.reduce(function(sum, p) {
+      return sum + (p.qty * p.curr / 100);
+    }, 0).toFixed(2));
     showToast('✅ Merged ' + newOnes.length + ' new positions!');
     saveState(); renderPortfolio(); updateHero(); return;
   }
 
   saveState(); renderPortfolio(); updateHero();
-  showToast('✅ Imported ' + positions.length + ' positions from Kalshi!');
+  showToast('✅ Imported ' + positions.length + ' positions · Bankroll set to $' + S.bank);
 }
 
 function importJSON(text) {
@@ -1116,8 +1126,15 @@ async function refreshAllPrices() {
     }
   }
 
+  // Recalculate bankroll from current position values
+  if (updated > 0) {
+    S.bank = parseFloat(S.positions.reduce(function(sum, p) {
+      return sum + (p.qty * p.curr / 100);
+    }, 0).toFixed(2));
+  }
+
   btn.disabled = false; btn.textContent = '🔄 Refresh Prices';
-  showToast('✅ Updated ' + updated + '/' + S.positions.length + ' prices!' + (stopped.length ? ' ⚠️ ' + stopped.length + ' stop-loss hit!' : ''));
+  showToast('✅ Updated ' + updated + '/' + S.positions.length + ' prices · Bankroll $' + S.bank + (stopped.length ? ' ⚠️ STOP HIT!' : ''));
 }
 
 function renderPortfolio() {
