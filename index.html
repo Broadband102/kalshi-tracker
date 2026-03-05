@@ -507,24 +507,59 @@ function scoreMatch(market, searchTerm) {
 }
 
 async function fetchKalshiMarket(searchTerm) {
+  var url = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  if (!url) return null;
+  var base = url.replace(/\/$/, '');
+
+  // If searchTerm looks like a ticker (e.g. KXCPI-26NOV-T0.1), fetch directly
+  var looksLikeTicker = /^KX[A-Z]/.test(searchTerm.toUpperCase());
+  if (looksLikeTicker) {
+    try {
+      var r = await fetch(base + '/kalshi-ticker?ticker=' + encodeURIComponent(searchTerm.toUpperCase()));
+      if (r.ok) {
+        var d = await r.json();
+        var m = d.market;
+        if (m) return parseMarket(m);
+      }
+    } catch(e) {}
+  }
+
+  // Fall back to searching cached list
   var markets = await getAllMarkets();
   if (!markets.length) return null;
   var scored = markets.map(function(m) { return { m: m, score: scoreMatch(m, searchTerm) }; })
     .filter(function(x) { return x.score > 0; })
     .sort(function(a, b) { return b.score - a.score; });
-  console.log('Matches for "' + searchTerm + '":', scored.slice(0,2).map(function(x) { return (x.m.title||'').slice(0,40); }));
   if (!scored.length) return null;
-  var m = scored[0].m;
+
+  // Got a match from cache — now fetch LIVE price for that ticker
+  var ticker = scored[0].m.ticker;
+  try {
+    var r2 = await fetch(base + '/kalshi-ticker?ticker=' + encodeURIComponent(ticker));
+    if (r2.ok) {
+      var d2 = await r2.json();
+      if (d2.market) return parseMarket(d2.market);
+    }
+  } catch(e) {}
+
+  // Last resort: use cached data (may be stale)
+  return parseMarket(scored[0].m);
+}
+
+function parseMarket(m) {
+  var yesAsk  = m.yes_ask  != null ? m.yes_ask  : null;
+  var yesBid  = m.yes_bid  != null ? m.yes_bid  : null;
+  var lastPrice = m.last_price != null ? m.last_price : null;
+  var mid = (yesBid != null && yesAsk != null) ? Math.round((yesBid + yesAsk) / 2) : null;
   return {
-    ticker:    m.ticker     || '',
-    title:     m.title      || m.question || '',
-    yesAsk:    m.yes_ask    != null ? m.yes_ask    : null,
-    noAsk:     m.no_ask     != null ? m.no_ask     : null,
-    yesBid:    m.yes_bid    != null ? m.yes_bid    : null,
-    lastPrice: m.last_price != null ? m.last_price : null,
-    // mid = midpoint of bid/ask — closest to Kalshi's displayed price
-    mid: (m.yes_bid != null && m.yes_ask != null) ? Math.round((m.yes_bid + m.yes_ask) / 2) : null,
-    url: 'https://kalshi.com/markets/' + (m.ticker || '')
+    ticker:    m.ticker || '',
+    title:     m.title  || m.question || '',
+    yesAsk:    yesAsk,
+    noAsk:     m.no_ask != null ? m.no_ask : null,
+    yesBid:    yesBid,
+    lastPrice: lastPrice,
+    mid:       mid,
+    url:       'https://kalshi.com/markets/' + (m.ticker || '')
   };
 }
 
@@ -844,13 +879,16 @@ function addPlayToPort(play) {
   var liveMatch = liveText.match(/(\d+)/);
   var livePrice = liveMatch ? parseInt(liveMatch[1]) : null;
   var playEntry = livePrice || play.currentKalshiPrice || play.entryTarget || play.fairValue || 60;
-  var autoStop = Math.round(playEntry * 0.75); // default 25% stop-loss
+  var autoStop = Math.round(playEntry * 0.75);
+  // Store the kalshiSearch ticker so refresh can find it directly
+  var tickerHint = play.kalshiSearch || play.market || '';
   S.positions.push({
     name: play.market, dir: play.direction || 'YES',
     entry: playEntry, curr: playEntry,
     qty:   Math.round((play.size || 10) / (playEntry / 100)),
     cat:   play.category || 'Other', expiry: play.expiry || '—',
     thesis: play.reason || '', stop: autoStop,
+    ticker: tickerHint,
     added: new Date().toLocaleDateString()
   });
   saveState(); renderPortfolio(); updateHero(); showToast('✅ Added to portfolio!');
@@ -900,20 +938,25 @@ async function refreshAllPrices() {
   for (var i = 0; i < S.positions.length; i++) {
     var pos = S.positions[i];
     try {
-      var market = await fetchKalshiMarket(pos.name);
+      // Use stored ticker first for direct match, fall back to name search
+      var searchTerm = pos.ticker || pos.name;
+      var market = await fetchKalshiMarket(searchTerm);
+      if (!market && pos.ticker !== pos.name) {
+        market = await fetchKalshiMarket(pos.name);
+      }
       if (market) {
-        // Priority: last_price → mid (bid+ask/2) → ask
-        // last_price matches what Kalshi shows; mid is next best
         var newPrice = market.lastPrice != null ? market.lastPrice
           : market.mid != null ? market.mid
           : pos.dir === 'YES' ? market.yesAsk
           : market.noAsk;
         if (newPrice != null) {
           S.positions[i].curr = newPrice;
+          // Also update the stored ticker if we got a better one
+          if (market.ticker && !pos.ticker) S.positions[i].ticker = market.ticker;
           updated++;
         }
       }
-    } catch(e) {}
+    } catch(e) { console.warn('Refresh failed for', pos.name, e); }
     // Small delay between fetches
     await new Promise(function(r) { setTimeout(r, 150); });
   }
