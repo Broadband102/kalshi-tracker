@@ -686,8 +686,24 @@ async function runMorningRoutine() {
 
     setStep(2, 'active', 'Step 2: Building ' + numPlays + '-play sheet...');
     var markets = await getAllMarkets();
-    var marketList = markets.slice(0, 80).map(function(m) {
-      return (m.ticker || '') + ': ' + (m.title || m.question || '');
+    var byCategory2 = {};
+    markets.forEach(function(m) {
+      var t = (m.ticker||'').toUpperCase();
+      var bucket = t.startsWith('KXBTC')||t.startsWith('KXETH') ? 'Crypto'
+        : t.startsWith('KXTRUMP')||t.startsWith('KXSENATE')||t.startsWith('KXHOUSE') ? 'Politics'
+        : t.startsWith('KXCHINA')||t.startsWith('KXRUSSIA')||t.startsWith('KXUKRAINE') ? 'Geopolitics'
+        : t.startsWith('KXFED')||t.startsWith('KXCPI')||t.startsWith('KXGDP')||t.startsWith('KXJOBS') ? 'Economics'
+        : 'Other';
+      if (!byCategory2[bucket]) byCategory2[bucket] = [];
+      byCategory2[bucket].push(m);
+    });
+    var balanced2 = [];
+    ['Economics','Politics','Geopolitics','Crypto','Other'].forEach(function(cat) {
+      if (byCategory2[cat]) balanced2 = balanced2.concat(byCategory2[cat].slice(0,15));
+    });
+    if (!balanced2.length) balanced2 = markets.slice(0,80);
+    var marketList = balanced2.map(function(m) {
+      return '[' + (m.ticker||'') + '] ' + (m.title || m.question || '');
     }).join('\n');
     var ownedCtx = S.positions.length
       ? '\n\nSKIP these — already owned (ticker or title): ' + S.positions.map(function(p) { return p.ticker || p.name; }).join(', ') + '.'
@@ -773,8 +789,51 @@ async function generatePlays() {
   var t1e = Math.ceil(numPlays * 0.4), t2e = Math.ceil(numPlays * 0.8);
   // Fetch real markets first so Claude picks from actual contracts
   var markets = await getAllMarkets();
-  var marketList = markets.slice(0, 80).map(function(m, i) {
-    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '');
+  // Group markets by category and sample from each for diversity
+  var byCategory = {};
+  markets.forEach(function(m) {
+    var cat = (m.category || 'Other').toLowerCase();
+    // Map to broad buckets
+    var bucket = cat.includes('econ') ? 'Economics'
+      : cat.includes('polit') ? 'Politics'
+      : cat.includes('geo') ? 'Geopolitics'
+      : cat.includes('crypto') || cat.includes('financ') ? 'Crypto/Finance'
+      : cat.includes('tech') || cat.includes('sci') ? 'Tech/Science'
+      : cat.includes('clim') || cat.includes('weather') ? 'Climate'
+      : cat.includes('cult') ? 'Culture'
+      : 'Other';
+    if (!byCategory[bucket]) byCategory[bucket] = [];
+    byCategory[bucket].push(m);
+  });
+
+  // Also bucket by ticker prefix as fallback
+  markets.forEach(function(m) {
+    var t = (m.ticker||'').toUpperCase();
+    var bucket = t.startsWith('KXBTC') || t.startsWith('KXETH') ? 'Crypto/Finance'
+      : t.startsWith('KXTRUMP') || t.startsWith('KXSENATE') || t.startsWith('KXHOUSE') ? 'Politics'
+      : t.startsWith('KXCHINA') || t.startsWith('KXRUSSIA') || t.startsWith('KXUKRAINE') ? 'Geopolitics'
+      : t.startsWith('KXSPACE') || t.startsWith('KXAI') || t.startsWith('KXFDA') ? 'Tech/Science'
+      : t.startsWith('KXHURRICANE') || t.startsWith('KXTEMP') ? 'Climate'
+      : null;
+    if (bucket) {
+      if (!byCategory[bucket]) byCategory[bucket] = [];
+      // Only add if not already there
+      if (!byCategory[bucket].find(function(x) { return x.ticker === m.ticker; }))
+        byCategory[bucket].push(m);
+    }
+  });
+
+  // Take up to 15 from each category
+  var balanced = [];
+  var cats = ['Economics','Politics','Geopolitics','Crypto/Finance','Tech/Science','Climate','Other'];
+  cats.forEach(function(cat) {
+    if (byCategory[cat]) balanced = balanced.concat(byCategory[cat].slice(0, 15));
+  });
+  if (!balanced.length) balanced = markets.slice(0, 80);
+
+  var marketList = balanced.map(function(m, i) {
+    var cat = m.category || '';
+    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '') + (cat ? ' (' + cat + ')' : '');
   }).join('\n');
 
   // Build owned list using tickers where available, fall back to name
