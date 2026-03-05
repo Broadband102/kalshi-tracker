@@ -501,7 +501,11 @@ async function loadLivePrice(num, searchTerm, category) {
     var yesAsk = market.yesAsk != null ? market.yesAsk : market.lastPrice;
     var noAsk  = market.noAsk  != null ? market.noAsk  : (yesAsk != null ? 100 - yesAsk : null);
     if (yesAsk != null) {
-      display.innerHTML = '<span style="color:var(--green);font-size:1.2rem;">YES ' + yesAsk + '¢</span> <span style="color:var(--mid);font-size:0.85rem;">/ NO ' + noAsk + '¢</span>';
+      var yesPct = yesAsk;  // already 0-100
+      var noPct  = noAsk;
+      display.innerHTML = '<span style="color:var(--green);font-size:1.2rem;">YES ' + yesPct + '¢</span>'
+        + ' <span style="color:var(--mid);font-size:0.85rem;">/ NO ' + noPct + '¢</span>'
+        + ' <span style="color:var(--dim);font-size:0.72rem;margin-left:4px;">(' + yesPct + '% prob)</span>';
       var play = (S.lastPlays || []).find(function(p) { return p.num == num; });
       var fairVal = play ? (play.fairValue || play.entryTarget || null) : null;
       if (fairVal != null) {
@@ -517,14 +521,18 @@ async function loadLivePrice(num, searchTerm, category) {
         edgeEl.innerHTML = '<span style="color:var(--mid);">Live price loaded!</span>';
       }
       var buyLink = document.getElementById('buylink-' + num);
-      if (buyLink && market.ticker) buyLink.href = market.url;
+      if (buyLink && market.ticker) {
+        // Direct URL to the exact contract
+        buyLink.href = 'https://kalshi.com/markets/' + market.ticker.toLowerCase() + '/';
+        buyLink.textContent = '🛒 ' + market.ticker;
+      }
       if (market.title) {
         var existing = document.getElementById('ctitle-' + num);
         if (!existing) {
           var t = document.createElement('div');
           t.id = 'ctitle-' + num;
-          t.style.cssText = 'font-size:0.68rem;color:var(--mid);font-weight:700;margin-top:5px;';
-          t.textContent = '📋 ' + market.title.slice(0, 60);
+          t.style.cssText = 'font-size:0.68rem;color:var(--teal);font-weight:700;margin-top:5px;padding:4px 6px;background:rgba(45,212,191,0.08);border-radius:6px;';
+          t.textContent = '📋 Matched: ' + market.title.slice(0, 70);
           display.parentNode.appendChild(t);
         }
       }
