@@ -1034,29 +1034,80 @@ async function testProxy(){
   const url=(document.getElementById('proxy-input').value||'').trim()||localStorage.getItem('kft-proxy')||'';
   const res=document.getElementById('proxy-result');
   if(!url){ res.textContent='⚠️ Enter your Worker URL first.'; res.style.color='var(--yellow)'; return; }
-  res.textContent='⏳ Testing...'; res.style.color='var(--mid)';
+  res.innerHTML='⏳ Testing Claude API...'; res.style.color='var(--mid)';
+
+  let claudeOk = false;
   try {
-    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:20,messages:[{role:'user',content:'Reply with just the word OK'}]})});
-    const raw=await r.text();
-    try {
-      const d=JSON.parse(raw);
-      if(d.content&&d.content.length){
-        res.innerHTML='✅ <strong>Proxy working!</strong> You\'re all set — go hit Generate Brief!';
-        res.style.color='var(--green)';
-      } else if(d.error){
-        res.innerHTML='⚠️ Proxy connected but API error: <strong>'+d.error.message+'</strong><br>Check your ANTHROPIC_API_KEY secret in Cloudflare → Settings → Variables and Secrets.';
-        res.style.color='var(--yellow)';
-      } else {
-        res.innerHTML='⚠️ Unexpected: <code style="font-size:0.7rem;">'+raw.slice(0,200)+'</code>';
-        res.style.color='var(--yellow)';
-      }
-    } catch(je){
-      res.innerHTML='⚠️ HTTP '+r.status+' but non-JSON response:<br><code style="font-size:0.7rem;word-break:break-all;">'+raw.slice(0,300)+'</code>';
-      res.style.color='var(--yellow)';
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:20,messages:[{role:'user',content:'Reply OK'}]})});
+    const d=JSON.parse(await r.text());
+    claudeOk = !!(d.content&&d.content.length);
+  } catch(e){ claudeOk=false; }
+
+  // Now test Kalshi endpoint
+  res.innerHTML=(claudeOk?'✅':'❌')+' Claude API &nbsp;|&nbsp; ⏳ Testing Kalshi...'; 
+  
+  let kalshiResult = '';
+  try {
+    const base = url.replace(/\/$/, '');
+    const kr = await fetch(`${base}/kalshi?search=fed+rate&limit=5`);
+    const kd = await kr.json();
+    const markets = kd.markets || [];
+    const count = markets.length;
+    
+    if (count > 0) {
+      const sample = markets.slice(0,3).map(m => (m.title||m.question||m.ticker||'unknown').slice(0,40)).join('<br>• ');
+      const hasPrice = markets[0].yes_ask != null || markets[0].last_price != null;
+      kalshiResult = `✅ Kalshi API working! Found ${count} markets for "fed rate":<br>
+        <div style="margin:6px 0 0 8px;font-size:0.75rem;color:var(--mid);">• ${sample}</div>
+        <div style="margin-top:4px;font-size:0.75rem;color:${hasPrice?'var(--green)':'var(--yellow)'};">
+          ${hasPrice ? '✅ Live prices available!' : '⚠️ No price data in response — Kalshi may require auth for prices'}
+        </div>`;
+    } else {
+      kalshiResult = `⚠️ Kalshi API reached but returned 0 markets.<br>
+        <div style="font-size:0.75rem;color:var(--mid);margin-top:4px;">Raw: ${JSON.stringify(kd).slice(0,200)}</div>`;
     }
-  } catch(e){
-    res.innerHTML='❌ Cannot reach proxy.<br>Error: <strong>'+e.message+'</strong><br>Double-check the Worker URL and that it\'s deployed.';
-    res.style.color='var(--red)';
+  } catch(e) {
+    kalshiResult = `❌ Kalshi API failed: ${e.message}<br>
+      <div style="font-size:0.75rem;color:var(--mid);margin-top:4px;">The /kalshi endpoint on your Worker may need redeployment.</div>`;
+  }
+
+  res.innerHTML = `
+    <div style="margin-bottom:8px;">${claudeOk ? '✅ <strong>Claude API: Working!</strong>' : '❌ <strong>Claude API: Failed</strong>'}</div>
+    <div>${kalshiResult}</div>
+    ${claudeOk ? '<div style="margin-top:8px;color:var(--green);font-weight:800;">Ready to trade! 🚀</div>' : ''}
+  `;
+  res.style.color = claudeOk ? 'var(--green)' : 'var(--red)';
+}
+
+// ── TEST KALSHI SEARCH (standalone debug tool) ──
+async function testKalshiSearch() {
+  const url = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  const term = prompt('Enter search term to test (e.g. "fed rate"):','fed rate');
+  if (!term || !url) return;
+
+  const base = url.replace(/\/$/, '');
+  try {
+    const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(term)}&limit=10`);
+    const d = await r.json();
+    const markets = d.markets || [];
+    
+    let msg = `Search: "${term}"
+Found: ${markets.length} markets
+
+`;
+    markets.forEach((m,i) => {
+      msg += `${i+1}. ${(m.title||m.question||'?').slice(0,60)}
+`;
+      msg += `   Ticker: ${m.ticker||'?'}
+`;
+      msg += `   YES ask: ${m.yes_ask!=null?m.yes_ask+'¢':'N/A'} | Last: ${m.last_price!=null?m.last_price+'¢':'N/A'}
+
+`;
+    });
+    alert(msg);
+  } catch(e) {
+    alert('Error: ' + e.message);
   }
 }
 
@@ -1170,8 +1221,14 @@ async function loadLivePrice(num, searchTerm) {
 
       btn.textContent = '🔄 Refresh';
     } else {
-      display.textContent = 'Price unavailable';
-      edgeEl.textContent = 'Could not get price — click Buy on Kalshi to check manually';
+      // Show AI fair value as reference since live price unavailable
+      const plays2 = S.lastPlays || [];
+      const play2  = plays2.find(p => p.num == num);
+      const fv2 = play2 ? (play2.fairValue || play2.entryTarget || null) : null;
+      display.innerHTML = '<span style="color:var(--yellow);">No live price from Kalshi API</span>';
+      edgeEl.innerHTML = fv2 
+        ? `<span style="color:var(--mid);">AI estimates fair value: <strong style="color:var(--yellow);">${fv2}¢</strong> — <a href="https://kalshi.com/markets?search=${encodeURIComponent(searchTerm)}" target="_blank" style="color:var(--blue);">check real price on Kalshi →</a></span>`
+        : '<span style="color:var(--mid);">Click Buy on Kalshi to see real price</span>';
       btn.textContent = '🔄 Retry';
     }
   } else {
