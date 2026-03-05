@@ -578,19 +578,30 @@ async function fetchKalshiMarket(searchTerm) {
 
   try {
     const base = proxyUrl.replace(/\/$/, '');
-    const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(searchTerm)}`);
-    const d = await r.json();
-    const markets = d.markets || d.data || [];
-    if (!markets.length) return null;
 
-    // Filter out sports markets, find best non-sports match
-    const filtered = markets.filter(m => {
-      const title = (m.title || m.question || '').toLowerCase();
-      return !sportsKeywords.some(kw => title.includes(kw));
-    });
+    // Try original search term first, then shortened versions
+    const searchVariants = [
+      searchTerm,
+      searchTerm.split(' ').slice(0,3).join(' '),
+      searchTerm.split(' ').slice(0,2).join(' ')
+    ].filter((v,i,a) => a.indexOf(v)===i && v.length > 2);
+
+    let filtered = [];
+    for (const term of searchVariants) {
+      const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(term)}`);
+      const d = await r.json();
+      const markets = d.markets || d.data || [];
+      console.log(`Kalshi search "${term}": ${markets.length} results`, markets.map(m=>m.title||m.question||m.ticker).slice(0,3));
+
+      filtered = markets.filter(m => {
+        const title = (m.title || m.question || '').toLowerCase();
+        return !sportsKeywords.some(kw => title.includes(kw));
+      });
+      if (filtered.length) break; // found good results, stop trying
+    }
 
     const m = filtered.length ? filtered[0] : null;
-    if (!m) return null;
+    if (!m) { console.warn('No non-sports Kalshi match for:', searchTerm); return null; }
 
     return {
       ticker:    m.ticker || '',
@@ -825,39 +836,29 @@ async function generatePlays(){
   const brief=S.lastBrief?S.lastBrief.slice(0,600):'No brief yet.';
   const t1=(S.bank*0.12).toFixed(0), t2=(S.bank*0.10).toFixed(0), t3=(S.bank*0.06).toFixed(0);
 
-  const prompt=`Today is ${today}. You are helping a Kalshi trader find real open contracts.
+  const numPlays = S.plays || 10;
+  const prompt=`Today is ${today}. Generate a ${numPlays}-play Kalshi prediction market sheet. Bankroll: $${S.bank}.
+Brief context: ${brief.slice(0,200)}
 
-STEP 1: Search Kalshi.com right now for currently open prediction markets.
-STEP 2: Search today's news for events that create mispricings.
-STEP 3: Match news to specific open Kalshi contracts.
+Search Kalshi.com for open markets. Search today's news for mispricings.
 
-Return ONLY a JSON array — no markdown, no explanation:
-[
-  {
-    "num": 1,
-    "market": "EXACT contract title as shown on Kalshi.com — copy it word for word",
-    "kalshiSearch": "2-3 word search to find it on kalshi.com/markets",
-    "category": "Economic",
-    "direction": "YES",
-    "entryTarget": 62,
-    "edge": 12,
-    "confidence": 72,
-    "tier": 1,
-    "size": ${t1},
-    "reason": "One sentence: what news event + why this direction wins",
-    "risk": "LOW",
-    "expiry": "Mar 15"
-  }
-]
+YOU MUST RETURN EXACTLY ${numPlays} JSON OBJECTS. Do not stop early.
+Return ONLY the raw JSON array, absolutely nothing before or after it:
 
-Tier 1 plays 1-4: $${t1} each — Fed/economic data, high confidence
-Tier 2 plays 5-8: $${t2} each — political/legislative, medium confidence
-Tier 3 plays 9-10: $${t3} each — weather/events, speculative fun
+[{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Mar 17"},
+{"num":2,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"NO","fairValue":70,"entryTarget":58,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Apr 2"},
+{"num":3,...},{"num":4,...},{"num":5,...},{"num":6,...},{"num":7,...},{"num":8,...},{"num":9,...},{"num":10,...}]
 
-IMPORTANT: The "market" field must be copy-pasted exactly from Kalshi so the user can find it instantly. If unsure of exact name, include "kalshiSearch" so they can look it up.`;
+Tier 1 (num 1-4): $${t1} — Fed/CPI/jobs/economic (HIGH confidence)
+Tier 2 (num 5-8): $${t2} — Senate/House/state politics (MEDIUM confidence)
+Tier 3 (num 9-10): $${t3} — geopolitical/wildcard (SPECULATIVE)
+
+fairValue = your honest probability estimate
+kalshiSearch = exact words to search on kalshi.com to find this contract
+You MUST include all ${numPlays} items numbered 1 through ${numPlays}.`;
 
   try {
-    const raw=await callClaude(prompt,true,700);
+    const raw=await callClaude(prompt,true,1200);
     const plays=safeJSON(raw,[]);
     if(plays.length){ S.lastPlays=plays; saveState(); renderPlayCards(plays); setTimeout(()=>loadAllPrices(plays), 500); }
     else { document.getElementById('plays-out').innerHTML='<div class="card"><div style="font-size:0.85rem;color:var(--mid);white-space:pre-wrap;">'+raw+'</div></div>'; }
