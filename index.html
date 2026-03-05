@@ -711,53 +711,37 @@ PLAYS_END
 Tiers: T1(1-4)$${t1} Fed/econ | T2(5-8)$${t2} political | T3(9-10)$${t3} speculative`;
 
   try {
-    const raw = await callClaude(combinedPrompt, true);
-
-    // ── Parse response — very forgiving ──
     const briefOut = document.getElementById('brief-out');
     briefOut.className = 'ai-box';
 
-    // Try to extract brief text (everything before the JSON array)
-    let briefText = raw;
-    let playsText = '';
+    // ── STEP 1: Brief ──
+    const briefPrompt = `Today is ${today}. Kalshi prediction market analyst. Trader has $${S.bank}, targeting 3%/day. ${portCtx}
+Search today's news (economic data, Fed, politics, weather) and Kalshi.com for open markets.
+Write a DAILY BRIEF (max 250 words, use emojis):
+1. 📰 Top 3 News Signals
+2. 🎯 Top 4 Kalshi Opportunities (market name, YES/NO, why, confidence %)
+3. 💼 Positions: ${S.positions.length ? S.positions.map(p=>p.name).join(', ') : 'none yet'}
+4. 🌡️ Vibe: Hot/Warm/Slow`;
 
-    // Strategy 1: look for BRIEF_START/END markers
-    const briefMarker = raw.match(/BRIEF_START([\s\S]*?)BRIEF_END/i);
-    const playsMarker = raw.match(/PLAYS_START([\s\S]*?)PLAYS_END/i);
-
-    if (briefMarker && playsMarker) {
-      briefText = briefMarker[1].trim();
-      playsText = playsMarker[1].trim();
-    } else {
-      // Strategy 2: find the JSON array anywhere in the response
-      const jsonStart = raw.indexOf('[{');
-      const jsonEnd   = raw.lastIndexOf('}]');
-      if (jsonStart > -1 && jsonEnd > -1) {
-        briefText = raw.slice(0, jsonStart).trim();
-        playsText = raw.slice(jsonStart, jsonEnd + 2);
-      } else {
-        // Strategy 3: look for code blocks
-        const jsonBlock = raw.match(/```[\w]*([\s\S]*?)```/);
-        if (jsonBlock) {
-          playsText = jsonBlock[1].trim();
-          briefText = raw.replace(jsonBlock[0], '').trim();
-        }
-      }
-    }
-
-    // Show brief
-    briefOut.textContent = briefText || raw;
-    S.lastBrief = briefText || raw;
+    const briefText = await callClaude(briefPrompt, true);
+    briefOut.textContent = briefText;
+    S.lastBrief = briefText;
     S.briefTs = new Date().toLocaleString();
     document.getElementById('brief-ts').textContent = '🕐 Generated: ' + S.briefTs;
+    saveState();
     setStep(1, 'done', 'Step 1: Brief ready! ✓');
 
-    // Parse plays
+    // ── STEP 2: Plays ──
     setStep(2, 'active', 'Step 2: Building your 10-play sheet...');
-    let plays = safeJSON(playsText, []);
 
-    // Last resort: try parsing the whole raw response as JSON
-    if (!plays.length) plays = safeJSON(raw, []);
+    const playsPrompt = `Today is ${today}. Kalshi 10-play sheet. Trader has $${S.bank}. Context: ${briefText.slice(0,300)}
+Search Kalshi.com for currently open markets. Use EXACT contract names from Kalshi.
+Return ONLY a valid JSON array, nothing else before or after it:
+[{"num":1,"market":"exact Kalshi contract title","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Mar 15"},...]
+Tiers: T1(plays 1-4) $${t1} Fed/economic | T2(plays 5-8) $${t2} political | T3(plays 9-10) $${t3} speculative`;
+
+    const playsRaw = await callClaude(playsPrompt, true);
+    const plays = safeJSON(playsRaw, []);
 
     if (plays.length) {
       S.lastPlays = plays;
@@ -773,21 +757,13 @@ Tiers: T1(1-4)$${t1} Fed/econ | T2(5-8)$${t2} political | T3(9-10)$${t3} specula
         if (t.textContent.includes('10 Plays')) t.classList.add('on');
       });
 
-      // Step 3: live prices
+      // ── STEP 3: Live prices ──
       setStep(3, 'active', 'Step 3: Loading live Kalshi prices...');
       await loadAllPrices(plays);
       setStep(3, 'done', 'Step 3: Live prices loaded! ✓');
 
     } else {
-      // Show what we got so user can see the raw response
-      setStep(2, 'err', 'Step 2: AI didn\'t return plays in expected format — switching to Brief tab');
-      briefOut.textContent = raw; // show full raw response
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
-      document.getElementById('panel-daily').classList.add('on');
-      document.querySelectorAll('.tab').forEach(t => {
-        if (t.textContent.includes('Daily Brief')) t.classList.add('on');
-      });
+      setStep(2, 'err', 'Step 2: Try "Generate 10 Plays" button separately — brief is saved!');
     }
 
     saveState();
