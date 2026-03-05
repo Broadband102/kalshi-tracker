@@ -440,63 +440,46 @@ async function getAllMarkets() {
 }
 
 function scoreMatch(market, searchTerm) {
-  var title  = (market.title  || market.question || '').toLowerCase();
+  var title  = (market.title  || market.question || '').toLowerCase().trim();
   var ticker = (market.ticker || '').toLowerCase();
   var term   = searchTerm.toLowerCase().trim();
 
-  // Direct phrase match in title
-  if (title.indexOf(term) >= 0) return 100;
+  // 1. Exact title match (Claude copies exact titles from list)
+  if (title === term) return 200;
+  if (title.indexOf(term) >= 0) return 150;
+  if (term.indexOf(title) >= 0) return 140;
 
-  // Ticker prefix match
-  var termClean = term.replace(/[\s\-_]/g, '');
-  if (ticker.replace(/[\-_]/g,'').indexOf(termClean) >= 0) return 90;
+  // 2. Ticker exact or contains
+  if (ticker === term.replace(/\s+/g,'')) return 120;
+  if (ticker.indexOf(term.replace(/[\s\-]/g,'').toLowerCase()) >= 0) return 100;
 
-  // Keyword -> ticker prefix map (based on real Kalshi tickers)
+  // 3. Keyword -> ticker map
   var rules = [
-    // Fed / interest rates
-    { words: ['fed','fomc','federal funds','interest rate','rate cut','rate hike','rate hold','rate unchanged','fed meeting','fed decision'], ticker: 'kxfed' },
-    // CPI / inflation
-    { words: ['cpi','inflation','consumer price','price index'], ticker: 'kxcpi' },
-    // PCE
-    { words: ['pce','core pce','personal consumption'], ticker: 'kxpce' },
-    // Jobs
-    { words: ['jobs','nonfarm','payroll','nfp','employment'], ticker: 'kxjobs' },
-    // Unemployment
-    { words: ['unemployment','jobless rate','unemployment rate'], ticker: 'kxunemployment' },
-    // GDP
-    { words: ['gdp','gross domestic','economic growth'], ticker: 'kxgdp' },
-    // Bitcoin
+    { words: ['fed','fomc','federal funds','interest rate','rate cut','rate hike','rate hold'], ticker: 'kxfed' },
+    { words: ['cpi','inflation','consumer price'], ticker: 'kxcpi' },
+    { words: ['pce','core pce'], ticker: 'kxpce' },
+    { words: ['jobs','nonfarm','payroll','nfp'], ticker: 'kxjobs' },
+    { words: ['unemployment','jobless'], ticker: 'kxunemployment' },
+    { words: ['gdp','gross domestic','recession'], ticker: 'kxgdp' },
     { words: ['bitcoin','btc'], ticker: 'kxbtc' },
-    // Ethereum
     { words: ['ethereum','eth'], ticker: 'kxeth' },
-    // Oil
-    { words: ['oil','crude','wti','brent'], ticker: 'kxoil' },
-    // Gold
+    { words: ['oil','crude','wti'], ticker: 'kxoil' },
     { words: ['gold'], ticker: 'kxgold' },
-    // S&P
-    { words: ['s&p','spx','sp 500','sp500','stock market'], ticker: 'kxspx' },
-    // Tariffs
-    { words: ['tariff','trade war','import'], ticker: 'kxtariff' },
-    // Shutdown
-    { words: ['shutdown','government shutdown','continuing resolution'], ticker: 'kxshutdown' },
-    // Debt
-    { words: ['debt ceiling','debt limit','default'], ticker: 'kxdebt' },
-    // Trump
-    { words: ['trump','executive order','president trump'], ticker: 'kxtrump' },
-    // Senate / House
+    { words: ['s&p','spx','sp500','stock market'], ticker: 'kxspx' },
+    { words: ['tariff','trade war'], ticker: 'kxtariff' },
+    { words: ['shutdown'], ticker: 'kxshutdown' },
+    { words: ['debt ceiling','debt limit'], ticker: 'kxdebt' },
+    { words: ['trump'], ticker: 'kxtrump' },
     { words: ['senate'], ticker: 'kxsenate' },
-    { words: ['house vote','house bill','house passes'], ticker: 'kxhouse' },
-    // Recession
-    { words: ['recession'], ticker: 'kxrecession' },
+    { words: ['house vote','house bill'], ticker: 'kxhouse' },
   ];
-
   for (var i = 0; i < rules.length; i++) {
-    var matchesTerm   = rules[i].words.some(function(w) { return term.indexOf(w) >= 0; });
-    var matchesTicker = ticker.indexOf(rules[i].ticker) >= 0;
-    if (matchesTerm && matchesTicker) return 80;
+    var tm = rules[i].words.some(function(w) { return term.indexOf(w) >= 0; });
+    var km = ticker.indexOf(rules[i].ticker) >= 0;
+    if (tm && km) return 80;
   }
 
-  // Word scoring fallback
+  // 4. Word scoring fallback
   var words = term.split(/[\s\-_,]+/).filter(function(w) { return w.length > 2; });
   var score = 0;
   words.forEach(function(w) {
