@@ -419,9 +419,51 @@ async function getAllMarkets() {
 
 function scoreMatch(market, searchTerm) {
   var title = (market.title || market.question || '').toLowerCase();
-  var words = searchTerm.toLowerCase().split(' ').filter(function(w) { return w.length > 2; });
+  var ticker = (market.ticker || '').toLowerCase();
+  var combined = title + ' ' + ticker;
+  var term = searchTerm.toLowerCase().trim();
+
+  // Direct phrase match
+  if (combined.indexOf(term) >= 0) return 100;
+
+  // Ticker match (e.g. "FOMC" matches "KXFOMC-26MAR25")
+  if (ticker.indexOf(term.replace(/\s+/g,'')) >= 0) return 90;
+
+  // Keyword map: AI words -> Kalshi ticker keywords
+  var keyMap = {
+    'fed rate': 'fomc', 'federal reserve': 'fomc', 'fomc': 'fomc',
+    'interest rate': 'fomc', 'rate cut': 'fomc', 'rate hike': 'fomc',
+    'inflation': 'cpi', 'cpi': 'cpi', 'consumer price': 'cpi',
+    'unemployment': 'unemployment', 'jobs': 'jobs', 'nonfarm': 'jobs',
+    'payroll': 'jobs', 'gdp': 'gdp', 'recession': 'gdp',
+    'debt ceiling': 'debt', 'government shutdown': 'shutdown',
+    'tariff': 'tariff', 'trade': 'trade', 'china': 'china',
+    'bitcoin': 'btc', 'crypto': 'btc', 'btc': 'btc',
+    'ethereum': 'eth', 'eth': 'eth',
+    'oil': 'oil', 'crude': 'oil', 'gas': 'gas',
+    'senate': 'senate', 'house': 'house', 'congress': 'congress',
+    'election': 'election', 'president': 'president',
+    'trump': 'trump', 'biden': 'biden',
+    'stock market': 'sp500', 's&p': 'sp500', 'dow': 'dow',
+    'hurricane': 'hurricane', 'weather': 'weather',
+    'covid': 'covid', 'recession': 'recession'
+  };
+
+  // Check if any mapped keyword matches
+  for (var key in keyMap) {
+    if (term.indexOf(key) >= 0 && combined.indexOf(keyMap[key]) >= 0) return 80;
+    if (combined.indexOf(key) >= 0 && term.indexOf(keyMap[key]) >= 0) return 75;
+  }
+
+  // Word-by-word scoring
+  var words = term.split(/[\s\-_,]+/).filter(function(w) { return w.length > 2; });
   var score = 0;
-  words.forEach(function(w) { if (title.indexOf(w) >= 0) score += w.length; });
+  var matched = 0;
+  words.forEach(function(w) {
+    if (combined.indexOf(w) >= 0) { score += w.length * 3; matched++; }
+  });
+  // Bonus if multiple words match
+  if (matched > 1) score += matched * 10;
   return score;
 }
 
@@ -549,7 +591,7 @@ async function runMorningRoutine() {
     await new Promise(function(r) { setTimeout(r, 8000); });
 
     setStep(2, 'active', 'Step 2: Building ' + numPlays + '-play sheet...');
-    var playsPrompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi prediction market plays. Bankroll $' + S.bank + '. Context: ' + briefText.slice(0,200) + '. Search Kalshi.com for open markets. Return ONLY raw JSON array, nothing else: [{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"}] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN EXACTLY ' + numPlays + ' ITEMS.';
+    var playsPrompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi prediction market plays. Bankroll $' + S.bank + '. Context: ' + briefText.slice(0,200) + '. Search Kalshi.com for open markets. Return ONLY raw JSON array, nothing else: [{"num":1,"market":"contract name","kalshiSearch":"FOMC","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"}] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN EXACTLY ' + numPlays + ' ITEMS.';
     var playsRaw = await callClaude(playsPrompt, true, 1200);
     var plays = safeJSON(playsRaw, []);
 
@@ -623,7 +665,7 @@ async function generatePlays() {
   var t2 = (S.bank * sc.pctPerPlay / 100).toFixed(0);
   var t3 = (S.bank * sc.pctPerPlay / 100 * 0.6).toFixed(0);
   var t1e = Math.ceil(numPlays * 0.4), t2e = Math.ceil(numPlays * 0.8);
-  var prompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi plays. Bankroll $' + S.bank + '. Context: ' + brief + '. Search Kalshi.com for open markets. Return ONLY raw JSON array: [{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"},{"num":2,...},...] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN ALL ' + numPlays + ' ITEMS.';
+  var prompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi plays. Bankroll $' + S.bank + '. Context: ' + brief + '. Search Kalshi.com for open markets. IMPORTANT: kalshiSearch must be SHORT ticker-style (FOMC, CPI, unemployment, tariff, bitcoin, shutdown) NOT long phrases. Return ONLY raw JSON array: [{"num":1,"market":"contract name","kalshiSearch":"FOMC","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"},{"num":2,...},...] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN ALL ' + numPlays + ' ITEMS.';
   try {
     var raw = await callClaude(prompt, true, 1200);
     var plays = safeJSON(raw, []);
