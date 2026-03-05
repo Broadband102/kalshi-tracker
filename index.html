@@ -685,12 +685,17 @@ function renderPlayCards(plays) {
     html += '<div class="conf-bar"><div class="conf-fill" style="width:' + conf + '%;background:' + (tf[tier] || 'var(--blue)') + '"></div></div>';
     html += '<div class="play-reason">' + (p.reason || '') + '</div>';
     html += '<div class="play-btns">';
-    html += '<button class="pbtn pbtn-add" data-num="' + p.num + '" onclick="addPlayToPort(S.lastPlays.find(function(x){return x.num==+this.dataset.num;}.bind(this))||{})">➕ Add to Portfolio</button>';
+    html += '<button class="pbtn pbtn-add" data-num="' + p.num + '" onclick="addPlayByNum(+this.dataset.num)">➕ Add to Portfolio</button>';
     html += '<button class="pbtn pbtn-skip" onclick="this.closest(\'.play-card\').style.opacity=\'0.35\';this.textContent=\'⏭ Skipped\'">Skip</button>';
     html += '</div></div>';
   }
   html += '</div>';
   document.getElementById('plays-out').innerHTML = html;
+}
+
+function addPlayByNum(num) {
+  var play = (S.lastPlays || []).find(function(x) { return x.num == num; });
+  if (play) addPlayToPort(play);
 }
 
 function addPlayToPort(play) {
@@ -981,18 +986,20 @@ function copyCode() {
 }
 
 // ═══ INIT ═══
-loadState();
-applySettings();
-updateHero();
-renderPortfolio();
-updateSetupStatus();
-drawProj();
-if (S.lastPlays && S.lastPlays.length) renderPlayCards(S.lastPlays);
-if (S.lastBrief) {
-  var bo = document.getElementById('brief-out');
-  bo.className = 'ai-box'; bo.textContent = S.lastBrief;
-  if (S.briefTs) document.getElementById('brief-ts').textContent = '🕐 Last: ' + S.briefTs;
-}
+document.addEventListener('DOMContentLoaded', function() {
+  loadState();
+  applySettings();
+  updateHero();
+  renderPortfolio();
+  updateSetupStatus();
+  drawProj();
+  if (S.lastPlays && S.lastPlays.length) renderPlayCards(S.lastPlays);
+  if (S.lastBrief) {
+    var bo = document.getElementById('brief-out');
+    bo.className = 'ai-box'; bo.textContent = S.lastBrief;
+    if (S.briefTs) document.getElementById('brief-ts').textContent = '🕐 Last: ' + S.briefTs;
+  }
+});
 </script>
 </body>
 </html>
