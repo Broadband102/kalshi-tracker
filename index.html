@@ -730,7 +730,8 @@ Return ONLY raw JSON array, zero text outside it:
 - kalshiSearch = 2-4 words someone would type to find this on Kalshi
 - Fill all ${numPlays} slots across: plays 1-${t1end} Tier1 economic $${t1size} | plays ${t1end+1}-${t2end} Tier2 political $${t2size} | plays ${t2end+1}-${numPlays} Tier3 wildcard $${t3size}`;
 
-  const playsRaw = await callClaude(playsPrompt, true, 900); // web search ON so it can find real contracts
+  try {
+    const playsRaw = await callClaude(playsPrompt, true, 900);
     const plays = safeJSON(playsRaw, []);
 
     if (plays.length) {
@@ -739,7 +740,6 @@ Return ONLY raw JSON array, zero text outside it:
       renderPlayCards(plays);
       setStep(2, 'done', 'Step 2: ' + plays.length + ' plays generated! ✓');
 
-      // Switch to plays tab
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
       document.getElementById('panel-plays').classList.add('on');
@@ -747,7 +747,6 @@ Return ONLY raw JSON array, zero text outside it:
         if (t.textContent.includes('10 Plays')) t.classList.add('on');
       });
 
-      // ── STEP 3: Live prices ──
       setStep(3, 'active', 'Step 3: Loading live Kalshi prices...');
       await loadAllPrices(plays);
       setStep(3, 'done', 'Step 3: Live prices loaded! ✓');
