@@ -912,6 +912,12 @@ function addPosition() {
   showToast('✅ Position saved!');
 }
 
+function updateEntry(i, val) {
+  S.positions[i].entry = parseFloat(val) || S.positions[i].entry;
+  saveState(); renderPortfolio(); updateHero();
+  showToast('✅ Entry price updated');
+}
+
 function updateCurr(i, val) {
   S.positions[i].curr = parseFloat(val) || S.positions[i].curr;
   saveState(); renderPortfolio(); updateHero();
@@ -1008,7 +1014,10 @@ function renderPortfolio() {
     html += '<div><div class="pos-name">' + p.name + ' <span style="font-size:0.72rem;color:' + (p.dir==='YES'?'var(--green)':'var(--red)') + ';">' + p.dir + '</span></div>';
     var stopLabel = p.stop != null ? ' · 🛑 Stop: ' + p.stop + '¢' : '';
     var stopHit = p.stop != null && p.curr <= p.stop;
-    html += '<div class="pos-meta">' + p.cat + ' · Entry: ' + p.entry + '¢ · ' + p.qty + ' contracts · Exp: ' + p.expiry + stopLabel + '</div>';
+    html += '<div class="pos-meta">' + p.cat
+      + ' · Entry: <input type="number" value="' + p.entry + '" onchange="updateEntry(' + i + ',this.value)" '
+      + 'style="width:42px;background:transparent;border:none;border-bottom:1px dashed var(--mid);color:var(--yellow);font-weight:800;font-size:0.78rem;padding:0 2px;text-align:center;" title="Click to edit entry price">'
+      + '¢ · ' + p.qty + ' contracts · Exp: ' + p.expiry + stopLabel + '</div>';
     if (stopHit) html += '<div style="color:var(--red);font-size:0.72rem;font-weight:800;animation:pulse 1s infinite;">🚨 STOP-LOSS HIT — Consider exiting!</div>';
     html += '</div>';
     html += '<div><div style="font-size:0.72rem;font-weight:800;color:var(--mid);margin-bottom:2px;">Current (¢)</div>';
