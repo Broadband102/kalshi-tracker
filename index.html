@@ -538,9 +538,14 @@ async function loadLivePrice(num, searchTerm, category) {
       }
       var buyLink = document.getElementById('buylink-' + num);
       if (buyLink && market.ticker) {
-        // Direct URL to the exact contract
-        buyLink.href = 'https://kalshi.com/markets/' + market.ticker.toLowerCase() + '/';
-        buyLink.textContent = '🛒 ' + market.ticker;
+        var tickerLower = market.ticker.toLowerCase();
+        // Kalshi URL format: /markets/SERIESSLUG/  e.g. kxfed-27apr/
+        // Extract series part (everything before last hyphen+value)
+        var parts = tickerLower.split('-');
+        var seriesSlug = parts.slice(0, 2).join('-'); // e.g. kxfed-27apr
+        buyLink.href = 'https://kalshi.com/markets/' + seriesSlug + '/?selectedTicker=' + market.ticker;
+        buyLink.textContent = '🎯 ' + market.ticker;
+        buyLink.title = market.title || '';
       }
       if (market.title) {
         var existing = document.getElementById('ctitle-' + num);
@@ -554,13 +559,30 @@ async function loadLivePrice(num, searchTerm, category) {
       }
       btn.textContent = '🔄 Refresh';
     } else {
-      display.textContent = 'Price N/A';
-      edgeEl.textContent = 'No price data from Kalshi';
+      display.innerHTML = '<span style="color:var(--yellow);">Price N/A</span>';
+      edgeEl.innerHTML = '<div style="font-size:0.75rem;color:var(--mid);">Kalshi returned this contract but no price. Market may be inactive or not yet trading.</div>';
       btn.textContent = '🔄 Retry';
     }
   } else {
-    display.innerHTML = '<span style="color:var(--yellow);font-size:0.8rem;">Contract not found</span>';
-    edgeEl.innerHTML = '<span style="color:var(--dim);font-size:0.75rem;">Try 🛒 Buy on Kalshi to search manually</span>';
+    var play = (S.lastPlays || []).find(function(p) { return p.num == num; });
+    var searchTerm = play ? (play.kalshiSearch || play.market || searchTerm) : searchTerm;
+    display.innerHTML = '<span style="color:var(--yellow);font-size:0.85rem;font-weight:800;">⚠️ Not auto-matched</span>';
+    edgeEl.innerHTML = ''
+      + '<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:8px;padding:8px;margin-top:4px;font-size:0.75rem;line-height:1.7;">'
+      + '<strong style="color:var(--yellow);">How to find this contract:</strong><br>'
+      + '1. Click <strong style="color:var(--green);">🔍 Search Kalshi</strong> below<br>'
+      + '2. Look for a contract about: <strong style="color:var(--text);">' + searchTerm + '</strong><br>'
+      + '3. Pick the one expiring <strong style="color:var(--blue);">soonest</strong> that matches the YES/NO direction<br>'
+      + '4. Check the price matches roughly what you expect'
+      + '</div>';
+    var buyLink = document.getElementById('buylink-' + num);
+    if (buyLink) {
+      buyLink.href = 'https://kalshi.com/markets?search=' + encodeURIComponent(searchTerm);
+      buyLink.textContent = '🔍 Search Kalshi';
+      buyLink.style.background = 'rgba(251,191,36,0.2)';
+      buyLink.style.borderColor = 'var(--yellow)';
+      buyLink.style.color = 'var(--yellow)';
+    }
     btn.textContent = '🔄 Retry';
   }
   btn.disabled = false;
