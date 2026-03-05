@@ -156,7 +156,7 @@ select.inp option{background:var(--card);}
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
       <div class="card-title" style="margin:0;">💼 Positions</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-green" onclick="refreshAllPrices()" id="btn-refresh-prices" style="padding:7px 14px;font-size:0.78rem;">🔄 Refresh Prices</button><button class="btn btn-blue" onclick="analyzePortfolio()" id="btn-analyze" style="padding:7px 14px;font-size:0.78rem;">🤖 AI Analyze All</button></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-green" onclick="refreshAllPrices()" id="btn-refresh-prices" style="padding:7px 14px;font-size:0.78rem;">🔄 Refresh Prices</button><button class="btn btn-blue" onclick="analyzePortfolio()" id="btn-analyze" style="padding:7px 14px;font-size:0.78rem;">🤖 AI Analyze All</button><button class="btn" onclick="exportPortfolio()" style="padding:7px 14px;font-size:0.78rem;background:rgba(139,92,246,0.2);border-color:#8b5cf6;color:#8b5cf6;">📥 Export</button><label class="btn" style="padding:7px 14px;font-size:0.78rem;background:rgba(139,92,246,0.2);border-color:#8b5cf6;color:#8b5cf6;cursor:pointer;">📤 Import CSV<input type="file" accept=".json,.csv" onchange="importPortfolio(event)" style="display:none;"></label></div>
     </div>
     <div id="pos-list"></div>
   </div>
@@ -898,6 +898,144 @@ function addPosition() {
   saveState(); renderPortfolio(); updateHero();
   ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-stop','pf-thesis'].forEach(function(id) { document.getElementById(id).value = ''; });
   showToast('✅ Position saved!');
+}
+
+function exportPortfolio() {
+  var data = {
+    version: 1,
+    exported: new Date().toISOString(),
+    bankroll: S.bank,
+    positions: S.positions,
+    settings: S.settings || {}
+  };
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kalshi-portfolio-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  showToast('📥 Portfolio exported!');
+}
+
+function importPortfolio(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var text = e.target.result;
+
+      // Detect CSV vs JSON
+      if (file.name.endsWith('.csv') || text.trim().startsWith('"marketTicker"') || text.trim().startsWith('marketTicker')) {
+        importKalshiCSV(text);
+      } else {
+        importJSON(text);
+      }
+    } catch(err) {
+      showToast('❌ Could not parse file: ' + err.message, 'var(--red)');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function importKalshiCSV(text) {
+  // Parse CSV
+  var lines = text.trim().split('\n');
+  var headers = lines[0].replace(/\uFEFF/g,'').split(',').map(function(h) {
+    return h.replace(/"/g,'').trim();
+  });
+
+  var positions = [];
+  for (var i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+
+    // Handle quoted CSV fields
+    var fields = [];
+    var line = lines[i];
+    var inQuote = false;
+    var current = '';
+    for (var c = 0; c < line.length; c++) {
+      if (line[c] === '"') { inQuote = !inQuote; }
+      else if (line[c] === ',' && !inQuote) { fields.push(current.trim()); current = ''; }
+      else { current += line[c]; }
+    }
+    fields.push(current.trim());
+
+    var row = {};
+    headers.forEach(function(h, idx) { row[h] = fields[idx] || ''; });
+
+    // Parse position: "Yes x 22" or "No x 5"
+    var posMatch = (row.position || '').match(/(Yes|No)\s*x\s*(\d+)/i);
+    if (!posMatch) continue;
+    var dir = posMatch[1].toUpperCase() === 'YES' ? 'YES' : 'NO';
+    var qty = parseInt(posMatch[2]);
+
+    // Parse prices — strip ¢ and $
+    var avgPrice   = parseFloat((row.averagePrice   || '0').replace(/[¢$,]/g,'')) || 0;
+    var currPrice  = parseFloat((row.lastTradePrice || row.yesPrice || '0').replace(/[¢$,]/g,'')) || 0;
+    var exposure   = parseFloat((row.exposure || '0').replace(/[¢$,]/g,'')) || 0;
+
+    // Parse expiry date
+    var expiry = '';
+    if (row.closeDate) {
+      var dm = row.closeDate.match(/([A-Za-z]+ \d+, \d+)/);
+      if (dm) expiry = dm[1];
+    }
+
+    // Build title from CSV fields
+    var title = row.marketTitle
+      ? (row.eventTitle || row.seriesTitle || '') + ' — ' + row.marketTitle
+      : (row.seriesTitle || row.marketTicker || '');
+
+    // Auto stop-loss at 25% below average price
+    var stop = Math.round(avgPrice * 0.75);
+
+    positions.push({
+      name:   title,
+      ticker: row.marketTicker || '',
+      dir:    dir,
+      entry:  avgPrice,
+      curr:   currPrice,
+      qty:    qty,
+      cat:    row.seriesTitle || 'Economic',
+      expiry: expiry,
+      thesis: '',
+      stop:   stop,
+      added:  new Date().toLocaleDateString()
+    });
+  }
+
+  if (!positions.length) { showToast('❌ No positions found in CSV', 'var(--red)'); return; }
+
+  var msg = 'Import ' + positions.length + ' positions from Kalshi CSV?\n\nOK = Replace all\nCancel = Merge with existing';
+  if (S.positions.length === 0 || confirm(msg)) {
+    S.positions = positions;
+  } else {
+    var existing = S.positions.map(function(p) { return p.ticker || p.name; });
+    var newOnes  = positions.filter(function(p) { return !existing.includes(p.ticker || p.name); });
+    S.positions  = S.positions.concat(newOnes);
+    showToast('✅ Merged ' + newOnes.length + ' new positions!');
+    saveState(); renderPortfolio(); updateHero(); return;
+  }
+
+  saveState(); renderPortfolio(); updateHero();
+  showToast('✅ Imported ' + positions.length + ' positions from Kalshi!');
+}
+
+function importJSON(text) {
+  var data = JSON.parse(text);
+  if (!data.positions) { showToast('❌ Invalid JSON file', 'var(--red)'); return; }
+  if (S.positions.length > 0 && !confirm('Replace ' + S.positions.length + ' existing positions?')) {
+    var existing = S.positions.map(function(p) { return p.name; });
+    var newOnes  = data.positions.filter(function(p) { return !existing.includes(p.name); });
+    S.positions  = S.positions.concat(newOnes);
+    showToast('✅ Merged ' + newOnes.length + ' positions!');
+  } else {
+    S.positions = data.positions;
+    if (data.bankroll) S.bank = data.bankroll;
+    showToast('✅ Imported ' + data.positions.length + ' positions!');
+  }
+  saveState(); renderPortfolio(); updateHero();
 }
 
 function updateEntry(i, val) {
