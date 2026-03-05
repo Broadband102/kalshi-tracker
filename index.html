@@ -824,12 +824,25 @@ async function generatePlays() {
   });
 
   // Take up to 15 from each category
+  // Filter out contracts expiring within 3 days (nearly settled, no edge)
+  var today = new Date();
+  var minExpiry = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
+  var notExpiringSoon = function(m) {
+    var close = m.close_time || m.expiration_time || m.close_date || '';
+    if (!close) return true; // keep if no date
+    var d = new Date(close);
+    return isNaN(d.getTime()) || d > minExpiry;
+  };
+
   var balanced = [];
   var cats = ['Economics','Politics','Geopolitics','Crypto/Finance','Tech/Science','Climate','Other'];
   cats.forEach(function(cat) {
-    if (byCategory[cat]) balanced = balanced.concat(byCategory[cat].slice(0, 15));
+    if (byCategory[cat]) {
+      balanced = balanced.concat(byCategory[cat].filter(notExpiringSoon).slice(0, 15));
+    }
   });
-  if (!balanced.length) balanced = markets.slice(0, 80);
+  if (!balanced.length) balanced = markets.filter(notExpiringSoon).slice(0, 80);
+  if (!balanced.length) balanced = markets.slice(0, 80); // last resort
 
   var marketList = balanced.map(function(m, i) {
     var cat = m.category || '';
@@ -849,7 +862,7 @@ async function generatePlays() {
     + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry. No duplicate contracts.'
     + ' Return ONLY JSON array: [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"}]'
     + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic/fed/cpi | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' geopolitics/politics/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' tech/climate/speculative.'
-    + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list.';
+    + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list. NO duplicate contracts — each must be a different ticker. NO contracts expiring within 3 days.';
   try {
     var raw = await callClaude(prompt, false, 1200);
     var plays = safeJSON(raw, []);
