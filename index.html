@@ -814,9 +814,16 @@ async function generatePlays() {
   ];
   if (!balanced.length) balanced = markets.slice(0, 80); // last resort
 
+  // Filter out near-settled markets (yes_price ≤5 or ≥95 = basically done)
+  balanced = balanced.filter(function(m) {
+    var p = m.yes_ask || m.yes_price || m.last_price || 50;
+    return p > 5 && p < 95;
+  });
+
   var marketList = balanced.map(function(m, i) {
     var cat = m.category || '';
-    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '') + (cat ? ' (' + cat + ')' : '');
+    var price = m.yes_ask || m.yes_price || m.last_price || '?';
+    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '') + ' — YES:' + price + '¢' + (cat ? ' (' + cat + ')' : '');
   }).join('\n');
 
   // Build owned list using tickers where available, fall back to name
@@ -832,7 +839,7 @@ async function generatePlays() {
     + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry. No duplicate contracts.'
     + ' Return ONLY JSON array: [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"}]'
     + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic/fed/cpi | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' geopolitics/politics/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' tech/climate/speculative.'
-    + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list. NO duplicate contracts — each must be a different ticker. NO contracts expiring within 3 days.';
+    + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list. NO duplicate contracts — each must be a different ticker. NO contracts expiring within 3 days. ONLY pick contracts where YES price is between 20 and 80 cents — skip anything trading at 1-5 cents or 95-99 cents.';
   try {
     var raw = await callClaude(prompt, false, 1200);
     var plays = safeJSON(raw, []);
