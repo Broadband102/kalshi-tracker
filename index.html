@@ -511,39 +511,36 @@ async function fetchKalshiMarket(searchTerm) {
   if (!url) return null;
   var base = url.replace(/\/$/, '');
 
-  // If searchTerm looks like a ticker (e.g. KXCPI-26NOV-T0.1), fetch directly
-  var looksLikeTicker = /^KX[A-Z]/.test(searchTerm.toUpperCase());
-  if (looksLikeTicker) {
-    try {
-      var r = await fetch(base + '/kalshi-ticker?ticker=' + encodeURIComponent(searchTerm.toUpperCase()));
-      if (r.ok) {
-        var d = await r.json();
-        var m = d.market;
-        if (m) return parseMarket(m);
-      }
-    } catch(e) {}
+  // Step 1: resolve to a ticker
+  var resolvedTicker = null;
+
+  // If it already looks like a ticker, use it directly
+  if (/^KX[A-Z]/i.test(searchTerm)) {
+    resolvedTicker = searchTerm.toUpperCase();
+  } else {
+    // Find best match in cached list to get the ticker
+    var markets = await getAllMarkets();
+    var scored = markets.map(function(m) { return { m: m, score: scoreMatch(m, searchTerm) }; })
+      .filter(function(x) { return x.score > 0; })
+      .sort(function(a, b) { return b.score - a.score; });
+    if (scored.length) resolvedTicker = scored[0].m.ticker;
   }
 
-  // Fall back to searching cached list
-  var markets = await getAllMarkets();
-  if (!markets.length) return null;
-  var scored = markets.map(function(m) { return { m: m, score: scoreMatch(m, searchTerm) }; })
-    .filter(function(x) { return x.score > 0; })
-    .sort(function(a, b) { return b.score - a.score; });
-  if (!scored.length) return null;
+  if (!resolvedTicker) return null;
 
-  // Got a match from cache — now fetch LIVE price for that ticker
-  var ticker = scored[0].m.ticker;
+  // Step 2: ALWAYS fetch live price directly from Kalshi API via Worker
   try {
-    var r2 = await fetch(base + '/kalshi-ticker?ticker=' + encodeURIComponent(ticker));
-    if (r2.ok) {
-      var d2 = await r2.json();
-      if (d2.market) return parseMarket(d2.market);
+    var r = await fetch(base + '/kalshi-ticker?ticker=' + encodeURIComponent(resolvedTicker));
+    if (r.ok) {
+      var d = await r.json();
+      if (d.market) return parseMarket(d.market);
     }
-  } catch(e) {}
+  } catch(e) { console.warn('Live fetch failed for', resolvedTicker, e); }
 
-  // Last resort: use cached data (may be stale)
-  return parseMarket(scored[0].m);
+  // Last resort: stale cache
+  var markets2 = await getAllMarkets();
+  var match = markets2.find(function(m) { return m.ticker === resolvedTicker; });
+  return match ? parseMarket(match) : null;
 }
 
 function parseMarket(m) {
@@ -931,7 +928,9 @@ async function refreshAllPrices() {
   var btn = document.getElementById('btn-refresh-prices');
   btn.disabled = true; btn.textContent = '⏳ Refreshing...';
 
-  // Pre-fetch market cache once
+  // Clear stale cache so getAllMarkets re-fetches fresh data
+  window.MARKET_CACHE = null;
+  window.MARKET_CACHE_TIME = 0;
   await getAllMarkets();
 
   var updated = 0;
