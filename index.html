@@ -567,41 +567,44 @@ function updateHero(){
 
 
 // ═══ KALSHI LIVE PRICE FETCHER ═══
-async function fetchKalshiMarket(searchTerm) {
+async function fetchKalshiMarket(searchTerm, category='') {
   const proxyUrl = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
   if (!proxyUrl) return null;
 
-  // Sports keywords to filter OUT
+  // Sports keywords to filter OUT as backup
   const sportsKeywords = ['nba','nfl','mlb','nhl','ncaa','wins by','points','rebounds',
     'assists','touchdowns','yards','innings','goals','score','game','match','series',
-    'playoff','championship','tournament','athlete','player','team','sport'];
+    'playoff','championship','tournament','athlete','player','team','sport',
+    'detroit','sabres','flames','lightning','mammoth','lakers','celtics','heat'];
 
   try {
     const base = proxyUrl.replace(/\/$/, '');
 
-    // Try original search term first, then shortened versions
-    const searchVariants = [
-      searchTerm,
-      searchTerm.split(' ').slice(0,3).join(' '),
-      searchTerm.split(' ').slice(0,2).join(' ')
-    ].filter((v,i,a) => a.indexOf(v)===i && v.length > 2);
+    // Map category to Kalshi category param
+    const catMap = {
+      'Economic': 'Economic', 'economy': 'Economic',
+      'Political': 'Political', 'politics': 'Political',
+      'Climate': 'Climate', 'weather': 'Climate',
+      'Healthcare': 'Healthcare', 'Geopolitical': 'Political',
+    };
+    const kalshiCat = catMap[category] || '';
 
-    let filtered = [];
-    for (const term of searchVariants) {
-      const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(term)}`);
-      const d = await r.json();
-      const markets = d.markets || d.data || [];
-      console.log(`Kalshi search "${term}": ${markets.length} results`, markets.map(m=>m.title||m.question||m.ticker).slice(0,3));
+    // Build search URL with category filter
+    const catParam = kalshiCat ? `&category=${encodeURIComponent(kalshiCat)}` : '';
+    const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(searchTerm)}${catParam}`);
+    const d = await r.json();
+    const markets = d.markets || d.data || [];
+    console.log('Kalshi search "' + searchTerm + '" [cat:' + (kalshiCat||'any') + ']: ' + markets.length + ' results',
+      markets.map(m=>(m.title||m.question||m.ticker||'?').slice(0,40)));
 
-      filtered = markets.filter(m => {
-        const title = (m.title || m.question || '').toLowerCase();
-        return !sportsKeywords.some(kw => title.includes(kw));
-      });
-      if (filtered.length) break; // found good results, stop trying
-    }
+    // Filter out sports as backup
+    const filtered = markets.filter(m => {
+      const title = (m.title || m.question || '').toLowerCase();
+      return !sportsKeywords.some(kw => title.includes(kw));
+    });
 
     const m = filtered.length ? filtered[0] : null;
-    if (!m) { console.warn('No non-sports Kalshi match for:', searchTerm); return null; }
+    if (!m) { console.warn('No match for:', searchTerm, '| raw count:', markets.length); return null; }
 
     return {
       ticker:    m.ticker || '',
@@ -1154,7 +1157,7 @@ function copyCode(){
 
 
 // ═══ LIVE PRICE LOADER ═══
-async function loadLivePrice(num, searchTerm) {
+async function loadLivePrice(num, searchTerm, category='') {
   const btn     = document.getElementById('pricebtn-' + num);
   const display = document.getElementById('liveprice-' + num);
   const edgeEl  = document.getElementById('edge-' + num);
@@ -1164,7 +1167,7 @@ async function loadLivePrice(num, searchTerm) {
 
   btn.textContent = '⏳'; btn.disabled = true;
 
-  const market = await fetchKalshiMarket(searchTerm);
+  const market = await fetchKalshiMarket(searchTerm, category);
 
   if (market) {
     const yesAsk  = market.yesAsk  != null ? market.yesAsk  : market.lastPrice;
@@ -1242,8 +1245,8 @@ async function loadLivePrice(num, searchTerm) {
 // Auto-load prices for all play cards
 async function loadAllPrices(plays) {
   for (const p of plays) {
-    await loadLivePrice(p.num, p.kalshiSearch || p.market || '');
-    await new Promise(r => setTimeout(r, 300)); // small delay between requests
+    await loadLivePrice(p.num, p.kalshiSearch || p.market || '', p.category || '');
+    await new Promise(r => setTimeout(r, 400));
   }
 }
 
