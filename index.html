@@ -581,7 +581,7 @@ async function callClaude(prompt, useWebSearch=true){
   let messages = [{role:'user',content:prompt}];
 
   for(let turn=0; turn<6; turn++){
-    const body = {model:'claude-sonnet-4-20250514', max_tokens:800, messages};
+    const body = {model:'claude-sonnet-4-20250514', max_tokens:1000, messages};
     if(tools.length) body.tools=tools;
 
     let r;
@@ -610,9 +610,23 @@ async function callClaude(prompt, useWebSearch=true){
   throw new Error('Too many tool turns');
 }
 
-function safeJSON(text,fallback){
-  try{ const c=text.replace(/```json|```/g,'').trim(); return JSON.parse(c.slice(c.indexOf('['),c.lastIndexOf(']')+1)); }
-  catch(e){ return fallback; }
+function safeJSON(text, fallback) {
+  if (!text) return fallback;
+  try {
+    // Strip markdown code fences
+    const c = text.replace(/```json|```/g, '').trim();
+    // Find outermost array
+    const s = c.indexOf('[');
+    const e = c.lastIndexOf(']');
+    if (s === -1 || e === -1) return fallback;
+    const jsonStr = c.slice(s, e + 1);
+    const parsed = JSON.parse(jsonStr);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch(err) {
+    // Try parsing as-is
+    try { const p = JSON.parse(text.trim()); return Array.isArray(p) ? p : fallback; }
+    catch(e2) { return fallback; }
+  }
 }
 
 function showAiError(el, err){
@@ -699,50 +713,81 @@ Tiers: T1(1-4)$${t1} Fed/econ | T2(5-8)$${t2} political | T3(9-10)$${t3} specula
   try {
     const raw = await callClaude(combinedPrompt, true);
 
-    // Parse BRIEF section
-    const briefMatch = raw.match(/BRIEF_START([\s\S]*?)BRIEF_END/);
-    const briefText = briefMatch ? briefMatch[1].trim() : raw.slice(0, 400);
-    
-    // Update brief display
+    // ── Parse response — very forgiving ──
     const briefOut = document.getElementById('brief-out');
     briefOut.className = 'ai-box';
-    briefOut.textContent = briefText;
-    S.lastBrief = briefText;
+
+    // Try to extract brief text (everything before the JSON array)
+    let briefText = raw;
+    let playsText = '';
+
+    // Strategy 1: look for BRIEF_START/END markers
+    const briefMarker = raw.match(/BRIEF_START([\s\S]*?)BRIEF_END/i);
+    const playsMarker = raw.match(/PLAYS_START([\s\S]*?)PLAYS_END/i);
+
+    if (briefMarker && playsMarker) {
+      briefText = briefMarker[1].trim();
+      playsText = playsMarker[1].trim();
+    } else {
+      // Strategy 2: find the JSON array anywhere in the response
+      const jsonStart = raw.indexOf('[{');
+      const jsonEnd   = raw.lastIndexOf('}]');
+      if (jsonStart > -1 && jsonEnd > -1) {
+        briefText = raw.slice(0, jsonStart).trim();
+        playsText = raw.slice(jsonStart, jsonEnd + 2);
+      } else {
+        // Strategy 3: look for code blocks
+        const jsonBlock = raw.match(/```[\w]*([\s\S]*?)```/);
+        if (jsonBlock) {
+          playsText = jsonBlock[1].trim();
+          briefText = raw.replace(jsonBlock[0], '').trim();
+        }
+      }
+    }
+
+    // Show brief
+    briefOut.textContent = briefText || raw;
+    S.lastBrief = briefText || raw;
     S.briefTs = new Date().toLocaleString();
     document.getElementById('brief-ts').textContent = '🕐 Generated: ' + S.briefTs;
-
     setStep(1, 'done', 'Step 1: Brief ready! ✓');
 
-    // Parse PLAYS section
+    // Parse plays
     setStep(2, 'active', 'Step 2: Building your 10-play sheet...');
-    const playsMatch = raw.match(/PLAYS_START([\s\S]*?)PLAYS_END/);
-    const playsText = playsMatch ? playsMatch[1].trim() : '';
-    const plays = safeJSON(playsText, []);
+    let plays = safeJSON(playsText, []);
+
+    // Last resort: try parsing the whole raw response as JSON
+    if (!plays.length) plays = safeJSON(raw, []);
 
     if (plays.length) {
       S.lastPlays = plays;
       saveState();
       renderPlayCards(plays);
-      setStep(2, 'done', `Step 2: ${plays.length} plays generated! ✓`);
+      setStep(2, 'done', 'Step 2: ' + plays.length + ' plays generated! ✓');
 
-      // Switch to plays tab to show results
+      // Switch to plays tab
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
       document.getElementById('panel-plays').classList.add('on');
-      // Highlight the plays tab
       document.querySelectorAll('.tab').forEach(t => {
         if (t.textContent.includes('10 Plays')) t.classList.add('on');
       });
 
-      // ── STEP 3: Load live prices ──
+      // Step 3: live prices
       setStep(3, 'active', 'Step 3: Loading live Kalshi prices...');
       await loadAllPrices(plays);
       setStep(3, 'done', 'Step 3: Live prices loaded! ✓');
 
     } else {
-      setStep(2, 'err', 'Step 2: Could not parse plays — check Brief tab for raw output');
-      S.lastBrief = raw;
-      briefOut.textContent = raw;
+      // Show what we got so user can see the raw response
+      setStep(2, 'err', 'Step 2: AI didn\'t return plays in expected format — switching to Brief tab');
+      briefOut.textContent = raw; // show full raw response
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+      document.getElementById('panel-daily').classList.add('on');
+      document.querySelectorAll('.tab').forEach(t => {
+        if (t.textContent.includes('Daily Brief')) t.classList.add('on');
+      });
     }
 
     saveState();
