@@ -342,20 +342,37 @@ function updateHero() {
 
 function safeJSON(raw, fallback) {
   if (!raw) return fallback;
+  // Strip markdown code fences
+  var cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  
   var attempts = [
+    // Try the whole cleaned string
+    function() { return JSON.parse(cleaned); },
+    // Extract between first [ and last ]
+    function() {
+      var s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
+      if (s >= 0 && e > s) return JSON.parse(cleaned.slice(s, e+1));
+    },
+    // Extract between first { and last } (single object)
+    function() {
+      var s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
+      if (s >= 0 && e > s) return JSON.parse('[' + cleaned.slice(s, e+1) + ']');
+    },
+    // Try original raw
+    function() { return JSON.parse(raw); },
+    // Last resort: find [ ] in original
     function() {
       var s = raw.indexOf('['), e = raw.lastIndexOf(']');
       if (s >= 0 && e > s) return JSON.parse(raw.slice(s, e+1));
-    },
-    function() { return JSON.parse(raw); },
-    function() {
-      var m = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (m) return JSON.parse(m[1].trim());
     }
   ];
   for (var i = 0; i < attempts.length; i++) {
-    try { var r = attempts[i](); if (r) return r; } catch(e) {}
+    try { 
+      var r = attempts[i](); 
+      if (r && (Array.isArray(r) ? r.length > 0 : true)) return r; 
+    } catch(e) {}
   }
+  console.warn('safeJSON failed, raw length:', raw.length, 'first 200:', raw.slice(0,200));
   return fallback;
 }
 
@@ -735,7 +752,12 @@ async function generatePlays() {
       S.lastPlays = plays; saveState(); renderPlayCards(plays);
       setTimeout(function() { loadAllPrices(plays); }, 500);
     } else {
-      document.getElementById('plays-out').innerHTML = '<div class="card"><div style="font-size:0.85rem;color:var(--mid);white-space:pre-wrap;">' + raw + '</div></div>';
+      // JSON parse failed - show error + first 500 chars of raw for debugging
+      document.getElementById('plays-out').innerHTML = '<div class="card">'
+        + '<div style="color:var(--red);font-weight:800;margin-bottom:8px;">⚠️ Could not parse plays — try again</div>'
+        + '<div style="font-size:0.75rem;color:var(--mid);white-space:pre-wrap;max-height:200px;overflow:auto;">' 
+        + raw.slice(0,500) + '</div></div>';
+      console.log('Full raw response:', raw);
     }
   } catch(e) {
     var el = document.createElement('div'); el.style.padding = '20px';
