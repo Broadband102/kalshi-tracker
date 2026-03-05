@@ -464,7 +464,7 @@ window.onload = () => {
   tick(); setInterval(tick,10000);
 
   if(S.lastBrief){ document.getElementById('brief-out').textContent=S.lastBrief; document.getElementById('brief-ts').textContent=S.briefTs?'🕐 Generated: '+S.briefTs:''; }
-  if(S.lastPlays&&S.lastPlays.length) renderPlayCards(S.lastPlays);
+  if(S.lastPlays&&S.lastPlays.length){ renderPlayCards(S.lastPlays); setTimeout(()=>loadAllPrices(S.lastPlays), 800); }
 };
 
 function applySettings(){
@@ -516,6 +516,37 @@ function updateHero(){
   document.getElementById('prog-label').textContent='$'+S.bank.toFixed(0)+' of $'+(eoyNetTarget>999?Math.round(eoyNetTarget/1000)+'K':Math.round(eoyNetTarget));
   document.getElementById('pj-start').value=S.bank;
   document.getElementById('pj-tax').value=S.tax;
+}
+
+
+// ═══ KALSHI LIVE PRICE FETCHER ═══
+async function fetchKalshiMarket(searchTerm) {
+  const proxyUrl = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  if (!proxyUrl) return null;
+  try {
+    // Hit our Cloudflare Worker's /kalshi endpoint
+    const base = proxyUrl.replace(/\/$/, '');
+    const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(searchTerm)}`);
+    const d = await r.json();
+    const markets = d.markets || d.data || [];
+    if (!markets.length) return null;
+    // Return the best match
+    const m = markets[0];
+    return {
+      ticker:    m.ticker || '',
+      title:     m.title  || m.question || '',
+      yesBid:    m.yes_bid   != null ? m.yes_bid   : null,
+      yesAsk:    m.yes_ask   != null ? m.yes_ask   : null,
+      noBid:     m.no_bid    != null ? m.no_bid    : null,
+      noAsk:     m.no_ask    != null ? m.no_ask    : null,
+      lastPrice: m.last_price!= null ? m.last_price: null,
+      closeTime: m.close_time|| m.expiration_time || '',
+      url:       `https://kalshi.com/markets/${m.ticker||''}`,
+    };
+  } catch(e) {
+    console.warn('Kalshi fetch error:', e.message);
+    return null;
+  }
 }
 
 // ═══ CLAUDE API ═══
@@ -675,7 +706,7 @@ IMPORTANT: The "market" field must be copy-pasted exactly from Kalshi so the use
   try {
     const raw=await callClaude(prompt,true);
     const plays=safeJSON(raw,[]);
-    if(plays.length){ S.lastPlays=plays; saveState(); renderPlayCards(plays); }
+    if(plays.length){ S.lastPlays=plays; saveState(); renderPlayCards(plays); setTimeout(()=>loadAllPrices(plays), 500); }
     else { document.getElementById('plays-out').innerHTML='<div class="card"><div style="font-size:0.85rem;color:var(--mid);white-space:pre-wrap;">'+raw+'</div></div>'; }
   } catch(e){
     const el=document.createElement('div'); el.style.padding='20px';
@@ -696,15 +727,22 @@ function renderPlayCards(plays){
       <span class="play-badge ${tb[p.tier]||'pb-t2'}">${tl[p.tier]||'Tier 2'}</span>
       <div class="play-title">${p.market||'Market'}</div>
       <div class="play-cat">${p.category||''} · Expires ~${p.expiry||'?'}</div>
-      <a href="https://kalshi.com/markets?search=${encodeURIComponent(p.kalshiSearch||p.market||'')}" target="_blank"
-         style="display:flex;align-items:center;gap:8px;background:rgba(96,165,250,0.15);border:2px solid var(--blue);border-radius:12px;padding:8px 12px;margin-bottom:10px;text-decoration:none;"
-         onmouseover="this.style.background='rgba(96,165,250,0.28)'" onmouseout="this.style.background='rgba(96,165,250,0.15)'">
-        <span style="font-size:1.1rem;">🔍</span>
+      <!-- Live price row -->
+      <div id="price-${p.num}" style="background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <div>
-          <div style="font-size:0.68rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">Find on Kalshi.com →</div>
-          <div style="font-size:0.85rem;font-weight:800;color:var(--blue);">${p.kalshiSearch||p.market.slice(0,35)||'search'}</div>
+          <div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">Live Kalshi Price</div>
+          <div id="liveprice-${p.num}" style="font-family:'Fredoka One',cursive;font-size:1.3rem;color:var(--dim);">—¢</div>
         </div>
-      </a>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button onclick="loadLivePrice(${p.num},'${(p.kalshiSearch||p.market||'').replace(/'/g,"\'").slice(0,40)}')"
+            style="background:rgba(96,165,250,0.2);border:2px solid var(--blue);color:var(--blue);border-radius:8px;padding:5px 10px;font-weight:800;font-size:0.72rem;cursor:pointer;"
+            id="pricebtn-${p.num}">🔄 Load Price</button>
+          <a href="https://kalshi.com/markets?search=${encodeURIComponent(p.kalshiSearch||p.market||'')}" target="_blank"
+            style="background:rgba(74,222,128,0.15);border:2px solid var(--green);color:var(--green);border-radius:8px;padding:5px 10px;font-weight:800;font-size:0.72rem;text-decoration:none;">
+            🛒 Buy on Kalshi
+          </a>
+        </div>
+      </div>
       <div class="play-pills">
         <span class="pill ${dir==='YES'?'pill-yes':'pill-no'}">${dir}</span>
         <span class="pill pill-price">Buy ~${p.entryTarget||'?'}¢</span>
@@ -898,6 +936,61 @@ function copyCode(){
   }
 };`;
   navigator.clipboard.writeText(code).then(()=>showToast('📋 Copied!')).catch(()=>showToast('Select and copy manually'));
+}
+
+
+// ═══ LIVE PRICE LOADER ═══
+async function loadLivePrice(num, searchTerm) {
+  const btn = document.getElementById('pricebtn-' + num);
+  const display = document.getElementById('liveprice-' + num);
+  const row = document.getElementById('price-' + num);
+  if (!btn || !display) return;
+
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  const market = await fetchKalshiMarket(searchTerm);
+
+  if (market) {
+    // Show YES ask price (what you'd pay to buy YES)
+    const yesPrice = market.yesAsk != null ? market.yesAsk : market.lastPrice;
+    const noPrice  = market.noAsk  != null ? market.noAsk  : (yesPrice != null ? 100 - yesPrice : null);
+
+    if (yesPrice != null) {
+      display.innerHTML = `<span style="color:var(--green)">YES ${yesPrice}¢</span> <span style="color:var(--dim);font-size:0.8rem;">/ NO ${noPrice}¢</span>`;
+      row.style.borderColor = 'var(--green)';
+
+      // Update the buy link to go directly to this contract
+      const buyLink = row.querySelector('a');
+      if (buyLink && market.ticker) {
+        buyLink.href = market.url;
+        buyLink.textContent = '🛒 Buy on Kalshi';
+      }
+
+      // Show contract title if different
+      if (market.title && market.title.length > 5) {
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'font-size:0.68rem;color:var(--mid);font-weight:700;margin-top:3px;';
+        titleEl.textContent = '📋 ' + market.title.slice(0, 60);
+        display.appendChild(titleEl);
+      }
+    } else {
+      display.textContent = 'Price N/A';
+    }
+    btn.textContent = '🔄 Refresh';
+  } else {
+    display.innerHTML = '<span style="color:var(--yellow);font-size:0.75rem;">Not found — try Buy on Kalshi →</span>';
+    btn.textContent = '🔄 Retry';
+  }
+  btn.disabled = false;
+}
+
+// Auto-load prices for all play cards
+async function loadAllPrices(plays) {
+  for (const p of plays) {
+    await loadLivePrice(p.num, p.kalshiSearch || p.market || '');
+    await new Promise(r => setTimeout(r, 300)); // small delay between requests
+  }
 }
 
 // ═══ SELL ADVISOR ═══
