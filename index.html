@@ -1,0 +1,1725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎰 Kalshi Fun Tracker</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap');
+
+:root {
+  --bg:      #1a1f2e;
+  --panel:   #242938;
+  --card:    #2d3347;
+  --card2:   #363d55;
+  --border:  #404868;
+  --green:   #4ade80;
+  --blue:    #60a5fa;
+  --yellow:  #fbbf24;
+  --red:     #f87171;
+  --purple:  #a78bfa;
+  --pink:    #f472b6;
+  --orange:  #fb923c;
+  --teal:    #2dd4bf;
+  --white:   #f1f5f9;
+  --mid:     #94a3b8;
+  --dim:     #64748b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: #1a1f2e;
+}
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background: var(--bg);
+  color: var(--white);
+  min-height: 100vh;
+  font-size: 16px;
+}
+
+/* ── HEADER ── */
+.header {
+  background: var(--panel);
+  border-bottom: 4px solid var(--yellow);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.logo {
+  font-family: 'Fredoka One', cursive;
+  font-size: 2rem;
+  color: var(--yellow);
+  text-shadow: 3px 3px 0 rgba(0,0,0,0.3);
+  line-height: 1;
+}
+.logo span { color: var(--green); }
+
+.header-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.chip {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  border: 3px solid;
+}
+.chip-green  { background: rgba(74,222,128,0.15); color: var(--green);  border-color: var(--green);  }
+.chip-yellow { background: rgba(251,191,36,0.15);  color: var(--yellow); border-color: var(--yellow); }
+.chip-blue   { background: rgba(96,165,250,0.15);  color: var(--blue);   border-color: var(--blue);   }
+.chip-red    { background: rgba(248,113,113,0.15);  color: var(--red);    border-color: var(--red);    }
+
+/* ── BANKROLL HERO ── */
+.hero {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1a2f4e 50%, #1e2d4a 100%);
+  border-bottom: 4px solid var(--blue);
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.hero-bank {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.hero-label {
+  font-weight: 800;
+  color: var(--mid);
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.hero-amount {
+  font-family: 'Fredoka One', cursive;
+  font-size: 3.5rem;
+  color: var(--green);
+  line-height: 1;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+}
+.hero-sub { font-size: 0.8rem; color: var(--dim); margin-top: 2px; }
+
+.hero-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.hstat {
+  background: rgba(255,255,255,0.07);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 18px;
+  text-align: center;
+  min-width: 90px;
+}
+.hstat-val {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.hstat-lbl { font-size: 0.7rem; color: var(--mid); font-weight: 700; margin-top: 2px; }
+
+/* ── TABS ── */
+.tabs {
+  display: flex;
+  gap: 0;
+  background: var(--panel);
+  border-bottom: 4px solid var(--border);
+  overflow-x: auto;
+  padding: 0 16px;
+}
+
+.tab {
+  padding: 14px 20px;
+  border: none;
+  background: transparent;
+  color: var(--dim);
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 800;
+  cursor: pointer;
+  border-bottom: 4px solid transparent;
+  margin-bottom: -4px;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.tab:hover { color: var(--white); }
+.tab.on { color: var(--yellow); border-bottom-color: var(--yellow); }
+
+/* ── MAIN CONTENT ── */
+.main { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+
+/* ── PANELS ── */
+.panel { display: none; }
+.panel.on { display: block; }
+
+/* ── CARDS ── */
+.card {
+  background: var(--card);
+  border: 3px solid var(--border);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.2rem;
+  color: var(--yellow);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── BIG BUTTONS ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 14px;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 0.9rem;
+  border: 3px solid;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  text-decoration: none;
+}
+.btn:active { transform: scale(0.96); }
+.btn-green  { background: rgba(74,222,128,0.2);  color: var(--green);  border-color: var(--green);  box-shadow: 0 4px 0 rgba(74,222,128,0.3); }
+.btn-blue   { background: rgba(96,165,250,0.2);  color: var(--blue);   border-color: var(--blue);   box-shadow: 0 4px 0 rgba(96,165,250,0.3); }
+.btn-yellow { background: rgba(251,191,36,0.2);  color: var(--yellow); border-color: var(--yellow); box-shadow: 0 4px 0 rgba(251,191,36,0.3); }
+.btn-red    { background: rgba(248,113,113,0.2); color: var(--red);    border-color: var(--red);    box-shadow: 0 4px 0 rgba(248,113,113,0.3); }
+.btn-purple { background: rgba(167,139,250,0.2); color: var(--purple); border-color: var(--purple); box-shadow: 0 4px 0 rgba(167,139,250,0.3); }
+.btn:hover  { transform: translateY(-2px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ── INPUTS ── */
+.field { margin-bottom: 12px; }
+.field label {
+  display: block;
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--mid);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
+.field input, .field select, .field textarea {
+  width: 100%;
+  background: var(--card2);
+  border: 3px solid var(--border);
+  border-radius: 12px;
+  color: var(--white);
+  padding: 10px 14px;
+  font-family: 'Nunito', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.field input:focus, .field select:focus { border-color: var(--blue); }
+.field select option { background: var(--card2); }
+
+/* ── AI OUTPUT BOX ── */
+.ai-box {
+  background: var(--card2);
+  border: 3px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  font-size: 0.88rem;
+  line-height: 1.8;
+  color: var(--white);
+  min-height: 80px;
+  white-space: pre-wrap;
+}
+.ai-box.loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--mid);
+  font-weight: 700;
+}
+
+.spinner {
+  width: 22px; height: 22px;
+  border: 3px solid var(--border);
+  border-top-color: var(--yellow);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── PLAY CARDS ── */
+.plays-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.play-card {
+  background: var(--card2);
+  border: 3px solid var(--border);
+  border-radius: 20px;
+  padding: 16px;
+  position: relative;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.play-card:hover { transform: translateY(-3px); }
+.play-card.tier1 { border-color: var(--green); }
+.play-card.tier2 { border-color: var(--blue); }
+.play-card.tier3 { border-color: var(--orange); }
+
+.play-badge {
+  position: absolute;
+  top: 12px; right: 12px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.pb-t1 { background: rgba(74,222,128,0.2);  color: var(--green);  border: 2px solid var(--green); }
+.pb-t2 { background: rgba(96,165,250,0.2);  color: var(--blue);   border: 2px solid var(--blue); }
+.pb-t3 { background: rgba(251,146,60,0.2);  color: var(--orange); border: 2px solid var(--orange); }
+
+.play-num {
+  font-family: 'Fredoka One', cursive;
+  font-size: 3rem;
+  color: rgba(255,255,255,0.05);
+  position: absolute;
+  bottom: 8px; right: 14px;
+  line-height: 1;
+}
+
+.play-title { font-weight: 800; font-size: 0.95rem; color: var(--white); margin-bottom: 6px; padding-right: 50px; }
+.play-cat   { font-size: 0.72rem; color: var(--mid); font-weight: 700; margin-bottom: 10px; }
+
+.play-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.pill {
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  border: 2px solid;
+}
+.pill-yes    { background: rgba(74,222,128,0.15);  color: var(--green);  border-color: var(--green); }
+.pill-no     { background: rgba(248,113,113,0.15); color: var(--red);    border-color: var(--red); }
+.pill-price  { background: rgba(96,165,250,0.15);  color: var(--blue);   border-color: var(--blue); }
+.pill-edge   { background: rgba(251,191,36,0.15);  color: var(--yellow); border-color: var(--yellow); }
+.pill-size   { background: rgba(255,255,255,0.07); color: var(--mid);    border-color: var(--border); }
+
+.conf-bar { height: 8px; background: var(--border); border-radius: 6px; margin-bottom: 10px; overflow: hidden; }
+.conf-fill { height: 100%; border-radius: 6px; transition: width 0.8s; }
+
+.play-reason { font-size: 0.78rem; color: var(--mid); line-height: 1.6; margin-bottom: 12px; }
+
+.play-btns { display: flex; gap: 6px; }
+.pbtn {
+  flex: 1;
+  padding: 7px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.75rem;
+  border: 2px solid;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.1s;
+}
+.pbtn:active { transform: scale(0.95); }
+.pbtn-add  { background: rgba(74,222,128,0.2);  color: var(--green);  border-color: var(--green); }
+.pbtn-skip { background: rgba(255,255,255,0.05); color: var(--dim);    border-color: var(--border); }
+
+/* ── PORTFOLIO ── */
+.pos-list { display: flex; flex-direction: column; gap: 10px; }
+
+.pos-row {
+  background: var(--card2);
+  border: 3px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  align-items: center;
+  gap: 12px;
+  transition: border-color 0.2s;
+}
+.pos-row.pos-up   { border-left: 6px solid var(--green); }
+.pos-row.pos-down { border-left: 6px solid var(--red); }
+
+.pos-name { font-weight: 800; font-size: 0.92rem; color: var(--white); }
+.pos-meta { font-size: 0.72rem; color: var(--mid); font-weight: 700; margin-top: 2px; }
+
+.pos-pnl {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.3rem;
+  text-align: right;
+}
+
+.pos-curr-input {
+  width: 70px;
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: var(--white);
+  padding: 5px 8px;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 0.85rem;
+  text-align: center;
+  outline: none;
+}
+.pos-curr-input:focus { border-color: var(--blue); }
+
+.pos-close-btn {
+  background: rgba(248,113,113,0.15);
+  border: 2px solid var(--red);
+  color: var(--red);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-weight: 800;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+/* ── FORM GRID ── */
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.form-grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+
+/* ── PROGRESS BAR ── */
+.progress-wrap {
+  background: var(--card2);
+  border: 3px solid var(--border);
+  border-radius: 14px;
+  padding: 4px;
+  margin-bottom: 8px;
+}
+.progress-bar {
+  height: 22px;
+  border-radius: 10px;
+  transition: width 0.6s;
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: rgba(0,0,0,0.6);
+}
+
+/* ── EMOJI BADGES ── */
+.emoji-badge {
+  font-size: 2rem;
+  display: inline-block;
+  animation: bounce 2s infinite;
+}
+@keyframes bounce {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* ── DISCLAIMER ── */
+.disclaimer {
+  background: rgba(248,113,113,0.08);
+  border: 2px solid rgba(248,113,113,0.3);
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-size: 0.78rem;
+  color: rgba(248,113,113,0.85);
+  line-height: 1.6;
+  margin-bottom: 16px;
+  font-weight: 700;
+}
+
+/* ── SAVE NOTICE ── */
+.save-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(74,222,128,0.1);
+  border: 2px solid rgba(74,222,128,0.3);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--green);
+}
+
+/* ── TOAST ── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--card2);
+  border: 3px solid var(--green);
+  border-radius: 14px;
+  padding: 12px 24px;
+  font-weight: 800;
+  color: var(--green);
+  font-size: 0.9rem;
+  z-index: 999;
+  transition: transform 0.3s;
+  white-space: nowrap;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+@media (max-width: 600px) {
+  .form-grid-2, .form-grid-3, .form-grid-4 { grid-template-columns: 1fr; }
+  .hero-amount { font-size: 2.5rem; }
+  .pos-row { grid-template-columns: 1fr auto; }
+  .pos-pnl, .pos-curr-input, .pos-close-btn { grid-column: auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">🎰 Kalshi <span>Fun</span> Tracker</div>
+  <div class="header-chips">
+    <div class="chip chip-green" id="clock-chip">⏰ --:--</div>
+    <div class="chip chip-yellow">🎯 $100 → $228 goal</div>
+    <div class="save-notice" id="save-notice">💾 Saved in browser</div>
+  </div>
+</div>
+
+<!-- BANKROLL HERO -->
+<div class="hero">
+  <div>
+    <div class="hero-label">💵 Your Bankroll</div>
+    <div class="hero-amount">$<span id="hero-bank">100.00</span></div>
+    <div class="hero-sub">After-tax 2× target: $<span id="hero-target">228</span> &nbsp;·&nbsp; Day <span id="hero-day">1</span> of ~42</div>
+  </div>
+  <div class="hero-stats">
+    <div class="hstat">
+      <div class="hstat-val" id="hs-plays" style="color:var(--blue)">0/10</div>
+      <div class="hstat-lbl">Active Plays</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="hs-pnl" style="color:var(--green)">$0.00</div>
+      <div class="hstat-lbl">Unrealized P&L</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="hs-size" style="color:var(--yellow)">$10</div>
+      <div class="hstat-lbl">Per Play</div>
+    </div>
+    <div class="hstat">
+      <div class="hstat-val" id="hs-progress" style="color:var(--purple)">0%</div>
+      <div class="hstat-lbl">To Goal</div>
+    </div>
+  </div>
+</div>
+
+<!-- Goal Progress Bar -->
+<div style="padding: 10px 24px; background: var(--panel); border-bottom: 3px solid var(--border);">
+  <div style="display:flex;justify-content:space-between;font-size:0.75rem;font-weight:800;color:var(--mid);margin-bottom:4px;">
+    <span>$100 start</span>
+    <span id="prog-label">0% to goal</span>
+    <span>$228 goal</span>
+  </div>
+  <div class="progress-wrap" style="margin:0;">
+    <div class="progress-bar" id="prog-bar" style="width:0%;background:linear-gradient(90deg,var(--blue),var(--green));"></div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <button class="tab on"  onclick="showTab('daily',this)">📡 Daily Brief</button>
+  <button class="tab"     onclick="showTab('plays',this)">🎯 10 Plays</button>
+  <button class="tab"     onclick="showTab('port',this)">💼 My Portfolio</button>
+  <button class="tab"     onclick="showTab('proj',this)">📈 Projector</button>
+  <button class="tab"     onclick="showTab('how',this)">📖 How To Play</button>
+  <button class="tab"     onclick="showTab('setup',this)">⚙️ Setup</button>
+</div>
+
+<div class="main">
+
+<!-- ════════════════════════════════
+     DAILY BRIEF
+════════════════════════════════ -->
+<div id="panel-daily" class="panel on">
+  <div class="disclaimer">
+    ⚠️ <strong>Just for fun!</strong> This is prediction market entertainment on a $100 budget. Not financial advice. You can lose money. Verify everything on Kalshi.com before trading!
+  </div>
+
+  <!-- Settings Row -->
+  <div class="card">
+    <div class="card-title">⚙️ Your Settings</div>
+    <div class="form-grid-4">
+      <div class="field"><label>💵 Bankroll ($)</label><input type="number" id="cfg-bank" value="100" oninput="saveSettings()"></div>
+      <div class="field"><label>🏛️ Tax Rate (%)</label><input type="number" id="cfg-tax"  value="22"  oninput="saveSettings()"></div>
+      <div class="field"><label>📅 Today is Day #</label><input type="number" id="cfg-day"  value="1"   oninput="saveSettings()"></div>
+      <div class="field"><label>🎯 # of Plays</label><input type="number" id="cfg-plays" value="10"  oninput="saveSettings()"></div>
+    </div>
+  </div>
+
+  <!-- AI Brief -->
+  <div class="card">
+    <div class="card-title">🤖 Today's AI Intelligence Brief</div>
+    <p style="font-size:0.85rem;color:var(--mid);font-weight:700;margin-bottom:14px;">
+      Clicks the button 👇 and the AI searches today's news + scans Kalshi markets to find mispricings. Takes ~20 seconds.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+      <button class="btn btn-yellow" onclick="runBrief()" id="btn-brief">⚡ Generate Today's Brief</button>
+      <button class="btn btn-blue"   onclick="loadMarkets()" id="btn-markets">🔍 Scan Kalshi Markets</button>
+    </div>
+    <div id="brief-ts" style="font-size:0.75rem;color:var(--dim);font-weight:700;margin-bottom:8px;"></div>
+    <div class="ai-box" id="brief-out">
+Hit <strong style="color:var(--yellow)">⚡ Generate Today's Brief</strong> first thing each morning. The AI will scan real news and compare it to open Kalshi markets to spot contracts that might be mispriced.
+
+Then head to the <strong style="color:var(--blue)">🎯 10 Plays tab</strong> to get your stratified play sheet!
+    </div>
+  </div>
+
+  <!-- Market Scan Results -->
+  <div class="card" id="markets-card" style="display:none;">
+    <div class="card-title">🏪 Kalshi Markets Found <span id="mkt-count" style="font-size:0.85rem;color:var(--mid);font-family:'Nunito';font-weight:800;"></span></div>
+    <div id="mkt-list" style="font-size:0.82rem;color:var(--mid);font-weight:700;line-height:2.2;max-height:220px;overflow-y:auto;"></div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════
+     10 PLAYS
+════════════════════════════════ -->
+<div id="panel-plays" class="panel">
+  <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <div>
+      <div class="card-title" style="margin:0;">🎯 Today's 10-Play Sheet</div>
+      <div style="font-size:0.8rem;color:var(--mid);font-weight:700;margin-top:4px;">
+        🟢 Tier 1 = safe bets &nbsp;·&nbsp; 🔵 Tier 2 = medium &nbsp;·&nbsp; 🟠 Tier 3 = spicy longshots
+      </div>
+    </div>
+    <button class="btn btn-yellow" onclick="generatePlays()" id="btn-plays">⚡ Generate 10 Plays</button>
+  </div>
+  <div id="plays-out">
+    <div style="text-align:center;padding:50px;color:var(--mid);font-size:1rem;font-weight:700;">
+      <div style="font-size:3rem;margin-bottom:12px;">🎰</div>
+      Generate your Daily Brief first, then hit Generate 10 Plays!
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════
+     PORTFOLIO
+════════════════════════════════ -->
+<div id="panel-port" class="panel">
+
+  <!-- Totals -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+    <div class="card" style="text-align:center;padding:16px;">
+      <div style="font-family:'Fredoka One';font-size:1.8rem;color:var(--blue);" id="pt-invested">$0</div>
+      <div style="font-size:0.75rem;color:var(--mid);font-weight:800;">Total Invested</div>
+    </div>
+    <div class="card" style="text-align:center;padding:16px;">
+      <div style="font-family:'Fredoka One';font-size:1.8rem;" id="pt-pnl">$0.00</div>
+      <div style="font-size:0.75rem;color:var(--mid);font-weight:800;">Unrealized P&L</div>
+    </div>
+    <div class="card" style="text-align:center;padding:16px;">
+      <div style="font-family:'Fredoka One';font-size:1.8rem;color:var(--purple);" id="pt-ret">—</div>
+      <div style="font-size:0.75rem;color:var(--mid);font-weight:800;">Avg Return</div>
+    </div>
+    <div class="card" style="text-align:center;padding:16px;">
+      <div style="font-family:'Fredoka One';font-size:1.8rem;color:var(--yellow);" id="pt-count">0/10</div>
+      <div style="font-size:0.75rem;color:var(--mid);font-weight:800;">Open Positions</div>
+    </div>
+  </div>
+
+  <!-- Add Position + Export -->
+  <div class="card">
+    <div class="card-title">➕ Add a Position</div>
+    <div class="form-grid-4">
+      <div class="field"><label>📋 Market Name</label><input type="text" id="pf-name" placeholder="e.g. Fed Holds March"></div>
+      <div class="field"><label>↕️ Direction</label>
+        <select id="pf-dir"><option>YES</option><option>NO</option></select>
+      </div>
+      <div class="field"><label>🟢 Entry Price (¢)</label><input type="number" id="pf-entry" placeholder="58"></div>
+      <div class="field"><label>📦 # Contracts</label><input type="number" id="pf-qty" placeholder="15"></div>
+      <div class="field"><label>💹 Current Price (¢)</label><input type="number" id="pf-curr" placeholder="64"></div>
+      <div class="field"><label>🗂️ Category</label>
+        <select id="pf-cat">
+          <option>Economic 📊</option><option>Political 🏛️</option><option>Weather 🌀</option>
+          <option>Financial 💰</option><option>Sports 🏆</option><option>Other 🎲</option>
+        </select>
+      </div>
+      <div class="field"><label>📅 Expiry</label><input type="text" id="pf-exp" placeholder="Mar 15"></div>
+      <div class="field"><label>💭 Your Thesis</label><input type="text" id="pf-thesis" placeholder="Why you like this"></div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-green" onclick="addPosition()">💾 Save Position</button>
+      <button class="btn btn-blue"  onclick="analyzePortfolio()" id="btn-analyze">🤖 AI Analyze All</button>
+      <button class="btn btn-purple" onclick="exportCSV()">📥 Download Portfolio CSV</button>
+      <button class="btn btn-yellow" onclick="exportJSON()">📦 Download Backup (JSON)</button>
+    </div>
+  </div>
+
+  <!-- Position List -->
+  <div class="card">
+    <div class="card-title">💼 Open Positions</div>
+    <div class="pos-list" id="pos-list">
+      <div style="text-align:center;padding:30px;color:var(--dim);font-size:0.9rem;font-weight:700;">
+        🌱 No positions yet! Add one above or use "Add to Portfolio" from the 10 Plays tab.
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Analysis Output -->
+  <div class="card" id="analysis-card" style="display:none;">
+    <div class="card-title">🤖 AI Portfolio Analysis</div>
+    <div class="ai-box" id="analysis-out"></div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════
+     PROJECTOR
+════════════════════════════════ -->
+<div id="panel-proj" class="panel">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+    <div class="card">
+      <div class="card-title">📈 Compound Calculator</div>
+      <div class="field"><label>💵 Start ($)</label><input type="number" id="pj-start" value="100" oninput="drawProj()"></div>
+      <div class="field"><label>📈 Daily Return (%)</label><input type="number" id="pj-rate" value="2" step="0.1" oninput="drawProj()"></div>
+      <div class="field"><label>📅 Days</label><input type="number" id="pj-days" value="42" oninput="drawProj()"></div>
+      <div class="field"><label>🏛️ Tax Rate (%)</label><input type="number" id="pj-tax" value="22" oninput="drawProj()"></div>
+
+      <!-- Scenario buttons -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn btn-red"    onclick="setRate(1)"   style="padding:8px 14px;font-size:0.8rem;">😬 1%</button>
+        <button class="btn btn-yellow" onclick="setRate(2)"   style="padding:8px 14px;font-size:0.8rem;">🎯 2%</button>
+        <button class="btn btn-green"  onclick="setRate(3)"   style="padding:8px 14px;font-size:0.8rem;">🚀 3%</button>
+        <button class="btn btn-purple" onclick="setRate(5)"   style="padding:8px 14px;font-size:0.8rem;">🌙 5%</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📊 Growth Chart</div>
+      <svg id="proj-svg" viewBox="0 0 400 200" style="width:100%;height:200px;overflow:visible;"></svg>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;" id="proj-summary"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📅 Day by Day</div>
+    <div id="proj-table" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;max-height:300px;overflow-y:auto;"></div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════
+     HOW TO PLAY
+════════════════════════════════ -->
+<div id="panel-how" class="panel">
+  <div class="card">
+    <div class="card-title">📖 How This Works</div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div style="background:var(--card2);border:3px solid var(--green);border-radius:16px;padding:16px;">
+        <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--green);margin-bottom:6px;">1️⃣ What is Kalshi?</div>
+        <div style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.8;">
+          Kalshi is a legal prediction market exchange. You bet YES or NO on real-world events — like "Will the Fed raise rates?" or "Will it snow in NYC this week?" Each contract pays $1 if correct, $0 if wrong. You buy contracts for less than $1, aiming to sell higher or hold to resolution.
+        </div>
+      </div>
+
+      <div style="background:var(--card2);border:3px solid var(--blue);border-radius:16px;padding:16px;">
+        <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--blue);margin-bottom:6px;">2️⃣ The 10-Play Strategy</div>
+        <div style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.8;">
+          Split your bankroll across 10 different trades (~$10 each). This way no single loss kills you. If 6 win at +5% and 4 lose at -3%, your total is: +$3.00 - $1.20 = <span style="color:var(--green)">+$1.80 profit (1.8% on $100)</span>. That's the engine! Aim for 2% per day across the whole portfolio.
+        </div>
+      </div>
+
+      <div style="background:var(--card2);border:3px solid var(--yellow);border-radius:16px;padding:16px;">
+        <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--yellow);margin-bottom:6px;">3️⃣ The Tax Reality</div>
+        <div style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.8;">
+          Kalshi winnings are taxed as <strong style="color:var(--white)">ordinary income</strong> (not capital gains). At 22%, to net $100 profit from your $100 starting bankroll, you need to make <strong style="color:var(--yellow)">~$128 gross profit</strong>. So your true 2× target is ~$228 gross. The projector already accounts for this!
+        </div>
+      </div>
+
+      <div style="background:var(--card2);border:3px solid var(--purple);border-radius:16px;padding:16px;">
+        <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--purple);margin-bottom:6px;">4️⃣ Daily Routine (5 min)</div>
+        <div style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.8;">
+          ☀️ <strong style="color:var(--white)">Morning:</strong> Open this app → Daily Brief → Generate → Check 10 Plays<br>
+          📊 <strong style="color:var(--white)">Enter trades:</strong> Go to Portfolio tab → Add positions you actually placed<br>
+          🔄 <strong style="color:var(--white)">Update prices:</strong> Edit current price field as markets move<br>
+          📥 <strong style="color:var(--white)">Backup:</strong> Download CSV whenever you close the browser!
+        </div>
+      </div>
+
+      <div style="background:var(--card2);border:3px solid var(--orange);border-radius:16px;padding:16px;">
+        <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--orange);margin-bottom:6px;">5️⃣ The Flip — Don't Hold to Zero!</div>
+        <div style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.8;">
+          You don't have to wait for the event to resolve! If you buy YES at 60¢ and news moves the market to 70¢, <strong style="color:var(--white)">sell for +16.7% profit</strong> and redeploy immediately. This is the fastest way to compound. Most beginners hold too long — lock in the price move!
+        </div>
+      </div>
+
+      <div style="background:var(--card2);border:3px solid var(--red);border-radius:16px;padding:16px;">
+        <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--red);margin-bottom:6px;">6️⃣ Hard Rules 🛑</div>
+        <div style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.8;">
+          🔴 Never risk more than 15% on one trade<br>
+          🔴 If a position drops 30%, exit. No averaging down.<br>
+          🔴 If you lose 15% of bankroll in one day, stop trading for 24 hours<br>
+          🔴 Never chase a play after it already moved<br>
+          🔴 This is <strong style="color:var(--white)">$100 fun money</strong> — don't stress about it!
+        </div>
+      </div>
+
+      <div style="background:var(--card2);border:3px solid var(--teal);border-radius:16px;padding:16px;">
+        <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--teal);margin-bottom:6px;">7️⃣ Best News Sources</div>
+        <div style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.8;">
+          📊 <a href="https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html" target="_blank" style="color:var(--teal);">CME FedWatch</a> — Fed rate probabilities<br>
+          🏛️ <a href="https://www.politico.com/playbook" target="_blank" style="color:var(--teal);">Politico Playbook</a> — Political morning brief<br>
+          🌀 <a href="https://www.tropicaltidbits.com" target="_blank" style="color:var(--teal);">Tropical Tidbits</a> — Weather models<br>
+          📰 <a href="https://apnews.com" target="_blank" style="color:var(--teal);">AP News</a> — Breaking news<br>
+          🔀 <a href="https://polymarket.com" target="_blank" style="color:var(--teal);">Polymarket</a> — Cross-check prices
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════
+     SETUP PANEL
+════════════════════════════════ -->
+<div id="panel-setup" class="panel">
+  <div class="card">
+    <div class="card-title">⚙️ Getting the AI Working (One-Time Setup)</div>
+    <p style="font-size:0.85rem;color:var(--mid);font-weight:700;line-height:1.7;margin-bottom:16px;">
+      The Anthropic API blocks direct browser calls for security (CORS policy). You need a tiny free "relay" that sits between your browser and the API. Takes about 5 minutes using Cloudflare's free plan.
+    </p>
+
+    <!-- Step 1 -->
+    <div style="background:var(--card2);border:3px solid var(--green);border-radius:16px;padding:16px;margin-bottom:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--green);margin-bottom:8px;">1️⃣ Create a Free Cloudflare Account</div>
+      <div style="font-size:0.82rem;color:var(--mid);font-weight:700;line-height:1.8;">
+        Go to <a href="https://dash.cloudflare.com/sign-up" target="_blank" style="color:var(--blue);">dash.cloudflare.com/sign-up</a> and sign up free.<br>
+        No credit card needed. Cloudflare Workers free tier = 100,000 requests/day.
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div style="background:var(--card2);border:3px solid var(--blue);border-radius:16px;padding:16px;margin-bottom:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--blue);margin-bottom:8px;">2️⃣ Create a Worker</div>
+      <div style="font-size:0.82rem;color:var(--mid);font-weight:700;line-height:1.8;">
+        In Cloudflare dashboard → <strong style="color:var(--white);">Workers & Pages</strong> → <strong style="color:var(--white);">Create</strong> → <strong style="color:var(--white);">Create Worker</strong><br>
+        Name it something like <strong style="color:var(--yellow);">kalshi-proxy</strong> → click <strong style="color:var(--white);">Deploy</strong>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div style="background:var(--card2);border:3px solid var(--yellow);border-radius:16px;padding:16px;margin-bottom:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--yellow);margin-bottom:8px;">3️⃣ Paste This Code Into the Worker</div>
+      <div style="font-size:0.82rem;color:var(--mid);font-weight:700;line-height:1.8;margin-bottom:10px;">
+        Click <strong style="color:var(--white);">Edit Code</strong>, delete everything, paste this:
+      </div>
+      <div style="background:#0f1117;border:2px solid var(--border);border-radius:10px;padding:14px;font-family:monospace;font-size:0.72rem;color:#a8ff78;line-height:1.7;white-space:pre-wrap;overflow-x:auto;">export default {
+  async fetch(request, env) {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }});
+    }
+    const body = await request.text();
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+      },
+      body,
+    });
+    const data = await resp.text();
+    return new Response(data, { headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    }});
+  }
+};</div>
+      <button class="btn btn-yellow" onclick="copyWorkerCode()" style="margin-top:10px;padding:8px 16px;font-size:0.8rem;">📋 Copy Code</button>
+    </div>
+
+    <!-- Step 4 -->
+    <div style="background:var(--card2);border:3px solid var(--purple);border-radius:16px;padding:16px;margin-bottom:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--purple);margin-bottom:8px;">4️⃣ Add Your Anthropic API Key as a Secret</div>
+      <div style="font-size:0.82rem;color:var(--mid);font-weight:700;line-height:1.8;">
+        In the Worker page → <strong style="color:var(--white);">Settings</strong> → <strong style="color:var(--white);">Variables and Secrets</strong><br>
+        → <strong style="color:var(--white);">Add Secret</strong> → Name: <strong style="color:var(--yellow);">ANTHROPIC_API_KEY</strong><br>
+        → Value: your key from <a href="https://console.anthropic.com/keys" target="_blank" style="color:var(--blue);">console.anthropic.com/keys</a><br>
+        → Click <strong style="color:var(--white);">Deploy</strong> again to save.
+      </div>
+    </div>
+
+    <!-- Step 5 -->
+    <div style="background:var(--card2);border:3px solid var(--orange);border-radius:16px;padding:16px;margin-bottom:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--orange);margin-bottom:8px;">5️⃣ Paste Your Worker URL Here</div>
+      <div style="font-size:0.82rem;color:var(--mid);font-weight:700;line-height:1.8;margin-bottom:10px;">
+        Your Worker URL looks like:<br>
+        <strong style="color:var(--yellow);">https://kalshi-proxy.yourname.workers.dev</strong><br><br>
+        Paste it below and click Save — the app will use it for all AI calls:
+      </div>
+      <div class="field" style="margin:0;">
+        <input type="url" id="proxy-url-input" placeholder="https://kalshi-proxy.yourname.workers.dev"
+          style="font-size:0.85rem;" oninput="previewProxy(this.value)">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+        <button class="btn btn-green" onclick="saveProxyUrl()">💾 Save Proxy URL</button>
+        <button class="btn btn-blue"  onclick="testProxy()">🧪 Test Connection</button>
+      </div>
+      <div id="proxy-test-result" style="margin-top:10px;font-size:0.8rem;font-weight:700;"></div>
+    </div>
+
+    <!-- Current Status -->
+    <div style="background:var(--card2);border:3px solid var(--teal);border-radius:16px;padding:16px;">
+      <div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--teal);margin-bottom:8px;">✅ Current Status</div>
+      <div id="setup-status" style="font-size:0.85rem;font-weight:700;line-height:1.9;"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end .main -->
+
+<div id="toast">✅ Saved!</div>
+
+<script>
+// ═══════════════════════════════════════
+// STATE & PERSISTENCE
+// ═══════════════════════════════════════
+let S = {
+  bank: 100, tax: 22, day: 1, plays: 10,
+  positions: [],
+  lastBrief: '',
+  lastPlays: [],
+  briefTs: ''
+};
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem('kft-state');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      Object.assign(S, parsed);
+    }
+  } catch(e) {}
+}
+
+function saveState() {
+  try {
+    localStorage.setItem('kft-state', JSON.stringify(S));
+    showToast('💾 Saved!');
+  } catch(e) {
+    showToast('⚠️ Could not save — download backup!');
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+window.onload = () => {
+  loadState();
+  applySettings();
+  updateHero();
+  renderPortfolio();
+  drawProj();
+  startClock();
+
+  if (S.lastBrief) {
+    document.getElementById('brief-out').textContent = S.lastBrief;
+    document.getElementById('brief-ts').textContent = S.briefTs ? '🕐 Last generated: ' + S.briefTs : '';
+  }
+  if (S.lastPlays && S.lastPlays.length) renderPlayCards(S.lastPlays);
+
+  // Load saved proxy
+  const savedProxy = localStorage.getItem('kft-proxy');
+  if (savedProxy) window.KALSHI_PROXY = savedProxy;
+  setTimeout(updateSetupStatus, 100);
+};
+
+function applySettings() {
+  document.getElementById('cfg-bank').value  = S.bank;
+  document.getElementById('cfg-tax').value   = S.tax;
+  document.getElementById('cfg-day').value   = S.day;
+  document.getElementById('cfg-plays').value = S.plays;
+}
+
+function startClock() {
+  const tick = () => {
+    document.getElementById('clock-chip').textContent = '⏰ ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  };
+  tick();
+  setInterval(tick, 10000);
+}
+
+// ═══════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════
+function saveSettings() {
+  S.bank  = parseFloat(document.getElementById('cfg-bank').value)  || 100;
+  S.tax   = parseFloat(document.getElementById('cfg-tax').value)   || 22;
+  S.day   = parseInt(document.getElementById('cfg-day').value)     || 1;
+  S.plays = parseInt(document.getElementById('cfg-plays').value)   || 10;
+  saveState();
+  updateHero();
+}
+
+function updateHero() {
+  const taxRate    = S.tax / 100;
+  const grossNeeded = S.bank / (1 - taxRate); // to double after tax
+  const targetGross = S.bank + grossNeeded;   // bankroll + gross profit needed
+  const perPlay    = (S.bank / S.plays).toFixed(0);
+
+  document.getElementById('hero-bank').textContent   = S.bank.toFixed(2);
+  document.getElementById('hero-target').textContent = targetGross.toFixed(0);
+  document.getElementById('hero-day').textContent    = S.day;
+  document.getElementById('hs-size').textContent     = '$' + perPlay;
+  document.getElementById('hs-plays').textContent    = S.positions.length + '/10';
+
+  // P&L
+  let upnl = 0, invested = 0;
+  S.positions.forEach(p => {
+    const cost = (p.entry / 100) * p.qty;
+    const curr = (p.curr  / 100) * p.qty;
+    invested += cost;
+    upnl += curr - cost;
+  });
+
+  const pnlEl = document.getElementById('hs-pnl');
+  pnlEl.textContent = (upnl >= 0 ? '+' : '') + '$' + upnl.toFixed(2);
+  pnlEl.style.color = upnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // Progress
+  const pct = Math.min(100, Math.max(0, ((S.bank - 100) / (targetGross - 100)) * 100));
+  document.getElementById('hs-progress').textContent = pct.toFixed(0) + '%';
+  document.getElementById('prog-bar').style.width = pct + '%';
+  document.getElementById('prog-bar').textContent = pct > 8 ? pct.toFixed(0) + '%' : '';
+  document.getElementById('prog-label').textContent = pct.toFixed(1) + '% to goal';
+
+  // Projector sync
+  document.getElementById('pj-start').value = S.bank;
+  document.getElementById('pj-tax').value   = S.tax;
+}
+
+// ═══════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════
+function showTab(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('on'));
+  document.getElementById('panel-' + id).classList.add('on');
+  btn.classList.add('on');
+  if (id === 'proj') drawProj();
+}
+
+// ═══════════════════════════════════════
+// KALSHI MARKET SCAN
+// ═══════════════════════════════════════
+async function loadMarkets() {
+  const btn = document.getElementById('btn-markets');
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning...';
+
+  try {
+    // Try public Kalshi API (may be blocked by CORS in browser)
+    const r = await fetch('https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open');
+    if (r.ok) {
+      const d = await r.json();
+      displayMarkets(d.markets || []);
+      btn.disabled = false;
+      btn.textContent = '🔍 Scan Kalshi Markets';
+      return;
+    }
+  } catch(e) {}
+
+  // CORS fallback: use AI with web search
+  try {
+    const r = await callClaude(
+      `Search Kalshi.com for currently open prediction market contracts today ${new Date().toLocaleDateString()}. List 20 specific open markets with their titles and categories. Return ONLY a JSON array: [{"title":"...","category":"..."}]. No markdown, no other text.`,
+      true
+    );
+    const markets = safeJSON(r, []);
+    S.kalshiMarkets = markets;
+    displayMarkets(markets);
+  } catch(e) {
+    document.getElementById('markets-card').style.display = 'block';
+    document.getElementById('mkt-list').textContent = 'Markets will be sourced by AI in the Daily Brief. Click Generate Brief!';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔍 Scan Kalshi Markets';
+}
+
+function displayMarkets(markets) {
+  document.getElementById('markets-card').style.display = 'block';
+  document.getElementById('mkt-count').textContent = '— ' + markets.length + ' found';
+  const el = document.getElementById('mkt-list');
+  el.innerHTML = markets.map(m => {
+    const t = m.title || m.question || m.name || JSON.stringify(m).slice(0,60);
+    const c = m.category || m.series_ticker || '';
+    return `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;gap:10px;">
+      <span style="color:var(--blue);min-width:100px;font-size:0.72rem;">${c}</span>
+      <span>${t}</span>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════
+// CLAUDE API HELPER — proxy-aware, handles tool use
+// ═══════════════════════════════════════
+
+// ── PROXY URL ──────────────────────────────────────────────
+// The Anthropic API blocks direct browser calls (CORS).
+// Paste your Cloudflare Worker URL here after setup.
+// See the ⚙️ Setup tab in the app for step-by-step instructions.
+// Format: 'https://your-worker-name.your-account.workers.dev'
+const PROXY_URL = window.KALSHI_PROXY || '';
+// ───────────────────────────────────────────────────────────
+
+async function callClaude(prompt, useWebSearch = true) {
+  // Detect where we're running
+  const loc = window.location.href;
+  const isLocal = loc.startsWith('file://') || loc.includes('localhost');
+  const inClaude = loc.includes('claude.ai') || loc.includes('anthropic');
+
+  if (inClaude) {
+    throw new Error('SANDBOX: Open this file in your browser, not the Claude preview.');
+  }
+
+  // Pick the right endpoint
+  const endpoint = PROXY_URL || (isLocal ? 'https://api.anthropic.com/v1/messages' : null);
+  if (!endpoint) {
+    throw new Error('⚙️ Proxy not configured yet! Tap the Setup tab for 5-minute free setup instructions.');
+  }
+
+  const tools = useWebSearch ? [{ type: 'web_search_20250305', name: 'web_search' }] : [];
+  let messages = [{ role: 'user', content: prompt }];
+
+  for (let turn = 0; turn < 6; turn++) {
+    const body = { model: 'claude-sonnet-4-20250514', max_tokens: 1500, messages };
+    if (tools.length) body.tools = tools;
+
+    // Build headers — proxy handles x-api-key server-side
+    const headers = { 'Content-Type': 'application/json' };
+    if (isLocal) {
+      // Direct call from file:// — browser allows this without CORS issues
+      headers['x-api-key'] = window.ANTHROPIC_KEY || '';
+      headers['anthropic-version'] = '2023-06-01';
+    }
+
+    const r = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error('API ' + r.status + ': ' + t.slice(0, 300));
+    }
+
+    const d = await r.json();
+    if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));
+    if (!d.content || !Array.isArray(d.content)) throw new Error('Bad API response: ' + JSON.stringify(d).slice(0, 200));
+
+    const textBlocks  = d.content.filter(b => b.type === 'text');
+    const toolBlocks  = d.content.filter(b => b.type === 'tool_use');
+
+    if (toolBlocks.length === 0 || d.stop_reason === 'end_turn') {
+      return textBlocks.map(b => b.text).join('\n').trim();
+    }
+
+    messages.push({ role: 'assistant', content: d.content });
+    messages.push({ role: 'user', content: toolBlocks.map(tu => ({
+      type: 'tool_result', tool_use_id: tu.id, content: []
+    }))});
+  }
+
+  throw new Error('Too many tool turns — try again.');
+}
+
+function safeJSON(text, fallback) {
+  try {
+    const c = text.replace(/```json|```/g, '').trim();
+    const s = c.indexOf('[');
+    const e = c.lastIndexOf(']') + 1;
+    return JSON.parse(c.slice(s, e));
+  } catch(e) { return fallback; }
+}
+
+// ═══════════════════════════════════════
+// DAILY BRIEF
+// ═══════════════════════════════════════
+async function runBrief() {
+  const btn = document.getElementById('btn-brief');
+  btn.disabled = true;
+  btn.textContent = '⏳ Thinking...';
+
+  const out = document.getElementById('brief-out');
+  out.className = 'ai-box loading';
+  out.innerHTML = '<div class="spinner"></div> Scanning today\'s news + Kalshi markets... (~20-30 sec)';
+
+  const today = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  const portCtx = S.positions.length
+    ? '\nYou currently hold: ' + S.positions.map(p => `${p.name} (${p.dir}) at ${p.entry}¢, now ${p.curr}¢`).join('; ')
+    : '\nNo current positions.';
+
+  const prompt = `Today is ${today}. You are a fun, friendly Kalshi prediction market analyst helping a beginner trader with $${S.bank}.
+
+${portCtx}
+
+Search today's news for: economic data releases scheduled today or this week, Fed speakers, political votes, weather events, sports finals, or anything prediction-market-relevant.
+
+Also search Kalshi.com for currently open markets.
+
+Write a DAILY BRIEF that:
+1. 📰 Today's Top 3 News Signals — what's happening that Kalshi traders should know
+2. 🎯 Top 5 Opportunities — specific Kalshi market types, direction (YES/NO), why there might be mispricing, confidence level (High/Medium/Low)
+3. 💼 Position Check — quick take on any held positions listed above
+4. 🌡️ Market Vibe Today — overall how good is today for prediction trading (Hot / Warm / Slow)
+
+Use plain English, be fun and casual. Under 500 words. Use emojis liberally. Be specific with market names.`;
+
+  try {
+    const text = await callClaude(prompt, true);
+    out.className = 'ai-box';
+    out.textContent = text;
+    S.lastBrief = text;
+    S.briefTs = new Date().toLocaleString();
+    document.getElementById('brief-ts').textContent = '🕐 Generated: ' + S.briefTs;
+    saveState();
+  } catch(e) {
+    out.className = 'ai-box';
+    const isSandbox = e.message && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('Load failed'));
+    if (isSandbox) {
+      out.textContent = '🔒 Blocked! This app needs a proxy to work on Google Sites.\n\n✅ TAP THE ⚙️ SETUP TAB for step-by-step instructions (5 min, free).\n\nOr open this HTML file directly in Safari/Chrome as a local file.';
+    } else {
+      out.textContent = '❌ Error: ' + e.message + '\n\nTry again! If it keeps failing, open the file directly in Safari/Chrome.';
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = '⚡ Generate Today\'s Brief';
+}
+
+// ═══════════════════════════════════════
+// GENERATE 10 PLAYS
+// ═══════════════════════════════════════
+async function generatePlays() {
+  const btn = document.getElementById('btn-plays');
+  btn.disabled = true;
+  btn.textContent = '⏳ Building your plays...';
+
+  document.getElementById('plays-out').innerHTML = `
+    <div style="text-align:center;padding:50px;color:var(--mid);font-size:0.9rem;font-weight:700;">
+      <div class="spinner" style="margin:0 auto 14px;width:32px;height:32px;border-width:4px;"></div>
+      AI building your 10-play sheet... searching news + Kalshi markets...
+    </div>`;
+
+  const today = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  const brief = S.lastBrief ? S.lastBrief.slice(0, 600) : '';
+  const perPlay = (S.bank / 10).toFixed(2);
+  const t1size  = (S.bank * 0.12).toFixed(0);
+  const t2size  = (S.bank * 0.10).toFixed(0);
+  const t3size  = (S.bank * 0.06).toFixed(0);
+
+  const prompt = `Today is ${today}. Build a Kalshi prediction market 10-play sheet for a fun beginner trader with $${S.bank}.
+
+DAILY BRIEF CONTEXT: ${brief}
+
+Search for current open Kalshi markets and today's news to find real opportunities.
+
+TIER SIZES:
+- Tier 1 (plays 1-4): High confidence, $${t1size} each — economic data, Fed decisions
+- Tier 2 (plays 5-8): Medium confidence, $${t2size} each — political, legislative
+- Tier 3 (plays 9-10): Speculative fun, $${t3size} each — weather, events, wildcards
+
+Return ONLY a raw JSON array (no markdown, no other text):
+[
+  {
+    "num": 1,
+    "market": "exact market title",
+    "category": "Economic",
+    "direction": "YES",
+    "entryTarget": 62,
+    "fairValue": 74,
+    "edge": 12,
+    "confidence": 72,
+    "tier": 1,
+    "size": ${t1size},
+    "reason": "Plain English reason in 1-2 sentences. Why does today's news create an edge here?",
+    "risk": "LOW",
+    "expiry": "Mar 15"
+  }
+]`;
+
+  try {
+    const raw = await callClaude(prompt, true);
+    const plays = safeJSON(raw, []);
+    if (plays.length) {
+      S.lastPlays = plays;
+      saveState();
+      renderPlayCards(plays);
+    } else {
+      document.getElementById('plays-out').innerHTML = `
+        <div class="card"><div style="font-size:0.85rem;color:var(--mid);white-space:pre-wrap;">${raw}</div></div>`;
+    }
+  } catch(e) {
+    document.getElementById('plays-out').innerHTML = `<div style="text-align:center;padding:40px;color:var(--red);font-weight:700;">❌ ${e.message}</div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '⚡ Generate 10 Plays';
+}
+
+function renderPlayCards(plays) {
+  const tierClass = { 1: 'tier1', 2: 'tier2', 3: 'tier3' };
+  const tierBadge = { 1: 'pb-t1', 2: 'pb-t2', 3: 'pb-t3' };
+  const tierLabel = { 1: '🟢 Tier 1', 2: '🔵 Tier 2', 3: '🟠 Tier 3' };
+  const tierFill  = { 1: 'var(--green)', 2: 'var(--blue)', 3: 'var(--orange)' };
+
+  const html = `<div class="plays-grid">` + plays.map(p => {
+    const dir = (p.direction || 'YES').toUpperCase();
+    const confPct = Math.min(100, Math.max(0, p.confidence || 50));
+    const retPct  = p.entryTarget ? ((p.edge / p.entryTarget) * 100).toFixed(1) : '?';
+    const alreadyHeld = S.positions.some(pos => pos.name && pos.name.toLowerCase().includes((p.market||'').toLowerCase().slice(0,8)));
+    const playData = JSON.stringify(p).replace(/"/g, '&quot;');
+
+    return `<div class="play-card ${tierClass[p.tier]||'tier2'}">
+      <div class="play-num">${p.num||''}</div>
+      <span class="play-badge ${tierBadge[p.tier]||'pb-t2'}">${tierLabel[p.tier]||'Tier 2'}</span>
+      <div class="play-title">${p.market||'Market'}</div>
+      <div class="play-cat">${p.category||''} · Expires ~${p.expiry||'?'}</div>
+      <div class="play-pills">
+        <span class="pill ${dir==='YES'?'pill-yes':'pill-no'}">${dir}</span>
+        <span class="pill pill-price">Buy ~${p.entryTarget||'?'}¢</span>
+        <span class="pill pill-edge">+${p.edge||'?'}¢ edge</span>
+        <span class="pill pill-size">$${p.size||'?'}</span>
+      </div>
+      <div class="conf-bar"><div class="conf-fill" style="width:${confPct}%;background:${tierFill[p.tier]||'var(--blue)'}"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.72rem;font-weight:800;color:var(--dim);margin-bottom:8px;">
+        <span>Confidence: <strong style="color:${tierFill[p.tier]}">${confPct}%</strong></span>
+        <span>Risk: <strong>${p.risk||'MED'}</strong></span>
+        <span>Est: <strong style="color:var(--yellow)">+${retPct}%</strong></span>
+      </div>
+      <div class="play-reason">${p.reason||''}</div>
+      <div class="play-btns">
+        <button class="pbtn pbtn-add" onclick='addPlayToPort(${playData})'>➕ Add to Portfolio</button>
+        <button class="pbtn pbtn-skip" onclick="this.closest('.play-card').style.opacity='0.35';this.textContent='⏭ Skipped'">Skip</button>
+      </div>
+    </div>`;
+  }).join('') + `</div>`;
+
+  document.getElementById('plays-out').innerHTML = html;
+}
+
+function addPlayToPort(play) {
+  const qty = Math.round(((play.size||10) / ((play.entryTarget||60)/100)));
+  S.positions.push({
+    name: play.market,
+    dir:  play.direction || 'YES',
+    entry: play.entryTarget || 60,
+    curr:  play.entryTarget || 60,
+    qty:   qty,
+    cat:   play.category || 'Other',
+    expiry: play.expiry || '—',
+    thesis: play.reason || '',
+    added: new Date().toLocaleDateString()
+  });
+  saveState();
+  renderPortfolio();
+  updateHero();
+  showToast('✅ Added to portfolio!');
+}
+
+// ═══════════════════════════════════════
+// PORTFOLIO
+// ═══════════════════════════════════════
+function addPosition() {
+  const p = {
+    name:   document.getElementById('pf-name').value.trim()  || 'My Trade',
+    dir:    document.getElementById('pf-dir').value,
+    entry:  parseFloat(document.getElementById('pf-entry').value) || 60,
+    curr:   parseFloat(document.getElementById('pf-curr').value)  || 60,
+    qty:    parseInt(document.getElementById('pf-qty').value)     || 10,
+    cat:    document.getElementById('pf-cat').value,
+    expiry: document.getElementById('pf-exp').value || '—',
+    thesis: document.getElementById('pf-thesis').value || '',
+    added:  new Date().toLocaleDateString()
+  };
+  S.positions.push(p);
+  saveState();
+  renderPortfolio();
+  updateHero();
+  // clear form
+  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-thesis'].forEach(id => document.getElementById(id).value = '');
+  showToast('✅ Position saved!');
+}
+
+function updateCurr(i, val) {
+  S.positions[i].curr = parseFloat(val) || S.positions[i].curr;
+  saveState();
+  renderPortfolio();
+  updateHero();
+}
+
+function closePos(i) {
+  if (!confirm(`Close "${S.positions[i].name}"?`)) return;
+  S.positions.splice(i, 1);
+  saveState();
+  renderPortfolio();
+  updateHero();
+  showToast('📤 Position closed!');
+}
+
+function renderPortfolio() {
+  const el = document.getElementById('pos-list');
+  if (!S.positions.length) {
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--dim);font-size:0.9rem;font-weight:700;">🌱 No positions yet!</div>';
+    document.getElementById('pt-invested').textContent = '$0';
+    document.getElementById('pt-pnl').textContent      = '$0.00';
+    document.getElementById('pt-ret').textContent      = '—';
+    document.getElementById('pt-count').textContent    = '0/10';
+    return;
+  }
+
+  let totalInvested = 0, totalPnl = 0;
+
+  el.innerHTML = S.positions.map((p, i) => {
+    const cost   = (p.entry / 100) * p.qty;
+    const currV  = (p.curr  / 100) * p.qty;
+    const pnl    = currV - cost;
+    const retPct = cost > 0 ? (pnl / cost * 100).toFixed(1) : '0.0';
+    totalInvested += cost;
+    totalPnl      += pnl;
+
+    const isUp    = pnl >= 0;
+    const pnlStr  = (isUp ? '+' : '') + '$' + pnl.toFixed(2);
+    const retStr  = (isUp ? '+' : '') + retPct + '%';
+
+    return `<div class="pos-row ${isUp ? 'pos-up' : 'pos-down'}">
+      <div>
+        <div class="pos-name">${p.name} <span style="font-size:0.72rem;color:${p.dir==='YES'?'var(--green)':'var(--red)'};">${p.dir}</span></div>
+        <div class="pos-meta">${p.cat} · Entry: ${p.entry}¢ · ${p.qty} contracts · Exp: ${p.expiry}</div>
+      </div>
+      <div>
+        <div style="font-size:0.72rem;font-weight:800;color:var(--mid);margin-bottom:2px;">Current (¢)</div>
+        <input class="pos-curr-input" type="number" value="${p.curr}" onchange="updateCurr(${i},this.value)">
+      </div>
+      <div class="pos-pnl" style="color:${isUp?'var(--green)':'var(--red)'};">${pnlStr}</div>
+      <div style="font-weight:800;font-size:0.85rem;color:${isUp?'var(--green)':'var(--red)'};">${retStr}</div>
+      <button class="pos-close-btn" onclick="closePos(${i})">✕ Close</button>
+    </div>`;
+  }).join('');
+
+  const avgRet = totalInvested > 0 ? ((totalPnl / totalInvested) * 100).toFixed(1) : '0.0';
+  const pnlEl  = document.getElementById('pt-pnl');
+  pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
+  pnlEl.style.color = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('pt-invested').textContent = '$' + totalInvested.toFixed(2);
+  document.getElementById('pt-ret').textContent      = (avgRet >= 0 ? '+' : '') + avgRet + '%';
+  document.getElementById('pt-count').textContent    = S.positions.length + '/10';
+}
+
+async function analyzePortfolio() {
+  if (!S.positions.length) { alert('Add some positions first!'); return; }
+  const btn = document.getElementById('btn-analyze');
+  btn.disabled = true; btn.textContent = '⏳ Analyzing...';
+
+  document.getElementById('analysis-card').style.display = 'block';
+  const out = document.getElementById('analysis-out');
+  out.className = 'ai-box loading';
+  out.innerHTML = '<div class="spinner"></div> AI reading today\'s news and reviewing your trades...';
+
+  const posText = S.positions.map(p => {
+    const cost = (p.entry / 100) * p.qty;
+    const pnl  = ((p.curr / 100) * p.qty) - cost;
+    return `• ${p.name} (${p.dir}) bought at ${p.entry}¢, now ${p.curr}¢, ${p.qty} contracts, P&L: ${pnl>=0?'+':''}$${pnl.toFixed(2)}, expires ${p.expiry}`;
+  }).join('\n');
+
+  const prompt = `Today is ${new Date().toLocaleDateString()}. Quick portfolio check for a fun Kalshi beginner.
+
+My open positions:
+${posText}
+
+Search today's news for anything affecting these markets.
+
+For each position give a fun quick take:
+✅ HOLD, 🔄 WATCH, or 🔴 SELL — and one sentence why.
+
+Then one line overall: portfolio health and one tip.
+
+Keep it friendly, casual, under 300 words, use emojis!`;
+
+  try {
+    const text = await callClaude(prompt, true);
+    out.className = 'ai-box';
+    out.textContent = text;
+  } catch(e) {
+    out.className = 'ai-box';
+    out.textContent = '❌ Error: ' + e.message;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🤖 AI Analyze All';
+}
+
+// ═══════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════
+function exportCSV() {
+  const rows = [
+    ['Market','Direction','Entry(¢)','Current(¢)','Contracts','Cost($)','Unrealized P&L($)','Return(%)','Category','Expiry','Thesis','Date Added'],
+    ...S.positions.map(p => {
+      const cost = (p.entry/100)*p.qty;
+      const curr = (p.curr/100)*p.qty;
+      const pnl  = curr - cost;
+      const ret  = cost > 0 ? ((pnl/cost)*100).toFixed(1) : '0';
+      return [p.name, p.dir, p.entry, p.curr, p.qty, cost.toFixed(2), pnl.toFixed(2), ret, p.cat, p.expiry, p.thesis, p.added];
+    })
+  ];
+
+  // Append summary
+  rows.push([]);
+  rows.push(['SUMMARY']);
+  rows.push(['Bankroll', '$' + S.bank]);
+  rows.push(['Tax Rate', S.tax + '%']);
+  rows.push(['Day', S.day]);
+  rows.push(['Total Positions', S.positions.length]);
+  let totalPnl = 0;
+  S.positions.forEach(p => {
+    const cost = (p.entry/100)*p.qty;
+    const curr = (p.curr/100)*p.qty;
+    totalPnl += curr - cost;
+  });
+  rows.push(['Total Unrealized P&L', '$' + totalPnl.toFixed(2)]);
+  rows.push(['Exported', new Date().toLocaleString()]);
+
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  download('kalshi-portfolio-' + new Date().toISOString().slice(0,10) + '.csv', csv, 'text/csv');
+  showToast('📥 CSV downloaded!');
+}
+
+function exportJSON() {
+  const data = { ...S, exportedAt: new Date().toISOString() };
+  download('kalshi-backup-' + new Date().toISOString().slice(0,10) + '.json', JSON.stringify(data, null, 2), 'application/json');
+  showToast('📦 Backup downloaded!');
+}
+
+function download(filename, content, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type}));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ═══════════════════════════════════════
+// PROJECTOR
+// ═══════════════════════════════════════
+function setRate(r) {
+  document.getElementById('pj-rate').value = r;
+  drawProj();
+}
+
+function drawProj() {
+  const start = parseFloat(document.getElementById('pj-start').value) || 100;
+  const rate  = parseFloat(document.getElementById('pj-rate').value) / 100;
+  const days  = parseInt(document.getElementById('pj-days').value)   || 42;
+  const tax   = parseFloat(document.getElementById('pj-tax').value)  / 100;
+
+  const vals = [start];
+  for (let i = 1; i <= days; i++) vals.push(+(vals[i-1] * (1+rate)).toFixed(2));
+
+  // After-tax net each day
+  const netVals = vals.map(v => start + (v - start) * (1 - tax));
+
+  const targetGross    = start * 2;
+  const targetAfterTax = start + start / (1 - tax); // gross needed for after-tax 2×
+  const maxV = Math.max(...vals, targetAfterTax);
+
+  const W = 400, H = 200, px = 30, py = 20;
+  const toX = i => px + (i / days) * (W - px*2);
+  const toY = v => H - py - ((v - start) / (maxV - start || 1)) * (H - py*2);
+
+  const grossPts = vals.map((v,i) => `${toX(i)},${toY(v)}`).join(' ');
+  const netPts   = netVals.map((v,i) => `${toX(i)},${toY(v)}`).join(' ');
+  const tGrossY  = toY(targetGross);
+  const tNetY    = toY(targetAfterTax);
+
+  let dayHitNet = -1;
+  for (let i = 0; i <= days; i++) {
+    if (netVals[i] >= start * 2 && dayHitNet === -1) dayHitNet = i;
+  }
+
+  document.getElementById('proj-svg').innerHTML = `
+    <line x1="${px}" y1="${tGrossY}" x2="${W-px}" y2="${tGrossY}" stroke="var(--blue)" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.6"/>
+    <text x="${W-px+3}" y="${tGrossY+4}" fill="var(--blue)" font-size="9" font-family="Nunito">2× gross</text>
+    <line x1="${px}" y1="${tNetY}" x2="${W-px}" y2="${tNetY}" stroke="var(--yellow)" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.7"/>
+    <text x="${W-px+3}" y="${tNetY+4}" fill="var(--yellow)" font-size="9" font-family="Nunito">2× net</text>
+    <polyline points="${netPts}" fill="none" stroke="var(--mid)" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.5"/>
+    <polyline points="${grossPts}" fill="none" stroke="var(--green)" stroke-width="2.5"/>
+    <circle cx="${toX(0)}" cy="${toY(start)}" r="4" fill="var(--green)"/>
+    <circle cx="${toX(days)}" cy="${toY(vals[days])}" r="4" fill="var(--green)"/>
+    ${dayHitNet > 0 ? `<line x1="${toX(dayHitNet)}" y1="${py}" x2="${toX(dayHitNet)}" y2="${H-py}" stroke="var(--yellow)" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="${toX(dayHitNet)}" y="${py-3}" fill="var(--yellow)" font-size="9" font-family="Nunito" text-anchor="middle">Day ${dayHitNet} 🎉</text>` : ''}
+    <text x="${toX(0)}" y="${H}" fill="var(--dim)" font-size="9" font-family="Nunito">D0</text>
+    <text x="${toX(days/2)}" y="${H}" fill="var(--dim)" font-size="9" font-family="Nunito" text-anchor="middle">D${Math.floor(days/2)}</text>
+    <text x="${toX(days)}" y="${H}" fill="var(--dim)" font-size="9" font-family="Nunito" text-anchor="end">D${days}</text>
+  `;
+
+  const finalGross = vals[days];
+  const finalNet   = netVals[days];
+  document.getElementById('proj-summary').innerHTML = `
+    <div class="card" style="text-align:center;padding:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.5rem;color:var(--green);">$${finalGross.toFixed(0)}</div>
+      <div style="font-size:0.72rem;color:var(--mid);font-weight:700;">Gross Day ${days}</div>
+    </div>
+    <div class="card" style="text-align:center;padding:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.5rem;color:var(--yellow);">$${finalNet.toFixed(0)}</div>
+      <div style="font-size:0.72rem;color:var(--mid);font-weight:700;">After Tax</div>
+    </div>
+    <div class="card" style="text-align:center;padding:12px;">
+      <div style="font-family:'Fredoka One';font-size:1.5rem;color:var(--purple);">${dayHitNet > 0 ? 'Day '+dayHitNet : '>D'+days}</div>
+      <div style="font-size:0.72rem;color:var(--mid);font-weight:700;">2× After Tax 🎉</div>
+    </div>
+  `;
+
+  // Day table
+  let tbl = '';
+  for (let i = 1; i <= days; i++) {
+    const v    = vals[i];
+    const net  = netVals[i];
+    const is2x = net >= start * 2;
+    tbl += `<div style="background:${is2x?'rgba(74,222,128,0.15)':'var(--card2)'};border:2px solid ${is2x?'var(--green)':'var(--border)'};border-radius:10px;padding:8px;text-align:center;">
+      <div style="font-size:0.65rem;font-weight:800;color:var(--dim);">Day ${i}</div>
+      <div style="font-family:'Fredoka One';font-size:1rem;color:${is2x?'var(--green)':'var(--white)'};">$${v.toFixed(0)}</div>
+      <div style="font-size:0.6rem;color:var(--dim);">~$${net.toFixed(0)}</div>
+      ${is2x ? '<div style="font-size:0.65rem;color:var(--green)">🎉 2×!</div>' : ''}
+    </div>`;
+  }
+  document.getElementById('proj-table').innerHTML = tbl;
+}
+
+// ═══════════════════════════════════════
+// PROXY SETUP HELPERS
+// ═══════════════════════════════════════
+function updateSetupStatus() {
+  const url = localStorage.getItem('kft-proxy') || '';
+  const el = document.getElementById('setup-status');
+  if (!el) return;
+  if (url) {
+    el.innerHTML = '🟢 Proxy URL saved: <strong style="color:var(--green);">' + url + '</strong><br>The AI buttons should work! Try Generate Today\'s Brief.';
+    window.KALSHI_PROXY = url;
+    document.getElementById('proxy-url-input') && (document.getElementById('proxy-url-input').value = url);
+  } else {
+    const isLocal = window.location.protocol === 'file:';
+    if (isLocal) {
+      el.innerHTML = '🟡 Running as local file — direct API calls allowed.<br>Add your API key: <input id="inline-key" placeholder="sk-ant-..." style="background:var(--card);border:2px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--white);font-family:inherit;width:260px;" oninput="window.ANTHROPIC_KEY=this.value">';
+    } else {
+      el.innerHTML = '🔴 No proxy set up yet.<br>Follow steps 1–5 above to get the AI working on Google Sites / hosted pages.';
+    }
+  }
+}
+
+function previewProxy(val) {}
+
+function saveProxyUrl() {
+  const url = document.getElementById('proxy-url-input').value.trim();
+  if (!url || !url.startsWith('http')) {
+    showToast('⚠️ Enter a valid URL starting with https://');
+    return;
+  }
+  localStorage.setItem('kft-proxy', url);
+  window.KALSHI_PROXY = url;
+  updateSetupStatus();
+  showToast('✅ Proxy URL saved!');
+}
+
+async function testProxy() {
+  const url = document.getElementById('proxy-url-input').value.trim() || localStorage.getItem('kft-proxy') || '';
+  const res = document.getElementById('proxy-test-result');
+  if (!url) { res.textContent = '⚠️ Enter your proxy URL first.'; res.style.color = 'var(--yellow)'; return; }
+  res.textContent = '⏳ Testing...'; res.style.color = 'var(--mid)';
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 10, messages:[{role:'user',content:'Say OK'}] })
+    });
+    const d = await r.json();
+    if (d.content || d.id) {
+      res.textContent = '✅ Proxy working! You\'re all set.';
+      res.style.color = 'var(--green)';
+    } else if (d.error) {
+      res.textContent = '⚠️ Proxy connected but API error: ' + d.error.message;
+      res.style.color = 'var(--yellow)';
+    } else {
+      res.textContent = '⚠️ Unexpected response: ' + JSON.stringify(d).slice(0,100);
+      res.style.color = 'var(--yellow)';
+    }
+  } catch(e) {
+    res.textContent = '❌ Could not reach proxy: ' + e.message;
+    res.style.color = 'var(--red)';
+  }
+}
+
+function copyWorkerCode() {
+  const code = `export default {
+  async fetch(request, env) {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }});
+    }
+    const body = await request.text();
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'x-api-key': env.ANTHROPIC_API_KEY,
+      },
+      body,
+    });
+    const data = await resp.text();
+    return new Response(data, { headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    }});
+  }
+};`;
+  navigator.clipboard.writeText(code).then(() => showToast('📋 Code copied!')).catch(() => showToast('Select and copy manually'));
+}
+
+</script>
+</body>
+</html>
