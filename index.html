@@ -641,7 +641,36 @@ async function generatePlays(){
   const brief=S.lastBrief?S.lastBrief.slice(0,600):'No brief yet.';
   const t1=(S.bank*0.12).toFixed(0), t2=(S.bank*0.10).toFixed(0), t3=(S.bank*0.06).toFixed(0);
 
-  const prompt=`Today ${today}. Kalshi plays, $${S.bank}, 3%/day target. Context: ${brief.slice(0,150)}. Search Kalshi.com for open markets now. T1(1-4)$${t1} Fed/econ T2(5-8)$${t2} political T3(9-10)$${t3} wildcards. Return JSON only: [{"num":1,"market":"exact Kalshi contract name","kalshiSearch":"2-3 words","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Mar 15"}]`;
+  const prompt=`Today is ${today}. You are helping a Kalshi trader find real open contracts.
+
+STEP 1: Search Kalshi.com right now for currently open prediction markets.
+STEP 2: Search today's news for events that create mispricings.
+STEP 3: Match news to specific open Kalshi contracts.
+
+Return ONLY a JSON array — no markdown, no explanation:
+[
+  {
+    "num": 1,
+    "market": "EXACT contract title as shown on Kalshi.com — copy it word for word",
+    "kalshiSearch": "2-3 word search to find it on kalshi.com/markets",
+    "category": "Economic",
+    "direction": "YES",
+    "entryTarget": 62,
+    "edge": 12,
+    "confidence": 72,
+    "tier": 1,
+    "size": ${t1},
+    "reason": "One sentence: what news event + why this direction wins",
+    "risk": "LOW",
+    "expiry": "Mar 15"
+  }
+]
+
+Tier 1 plays 1-4: $${t1} each — Fed/economic data, high confidence
+Tier 2 plays 5-8: $${t2} each — political/legislative, medium confidence
+Tier 3 plays 9-10: $${t3} each — weather/events, speculative fun
+
+IMPORTANT: The "market" field must be copy-pasted exactly from Kalshi so the user can find it instantly. If unsure of exact name, include "kalshiSearch" so they can look it up.`;
 
   try {
     const raw=await callClaude(prompt,true);
@@ -666,7 +695,16 @@ function renderPlayCards(plays){
       <div class="play-num">${p.num||''}</div>
       <span class="play-badge ${tb[p.tier]||'pb-t2'}">${tl[p.tier]||'Tier 2'}</span>
       <div class="play-title">${p.market||'Market'}</div>
-      <div class="play-cat">${p.category||''} · ~${p.expiry||'?'}</div>
+      <div class="play-cat">${p.category||''} · Expires ~${p.expiry||'?'}</div>
+      <a href="https://kalshi.com/markets?search=${encodeURIComponent(p.kalshiSearch||p.market||'')}" target="_blank"
+         style="display:flex;align-items:center;gap:8px;background:rgba(96,165,250,0.15);border:2px solid var(--blue);border-radius:12px;padding:8px 12px;margin-bottom:10px;text-decoration:none;"
+         onmouseover="this.style.background='rgba(96,165,250,0.28)'" onmouseout="this.style.background='rgba(96,165,250,0.15)'">
+        <span style="font-size:1.1rem;">🔍</span>
+        <div>
+          <div style="font-size:0.68rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">Find on Kalshi.com →</div>
+          <div style="font-size:0.85rem;font-weight:800;color:var(--blue);">${p.kalshiSearch||p.market.slice(0,35)||'search'}</div>
+        </div>
+      </a>
       <div class="play-pills">
         <span class="pill ${dir==='YES'?'pill-yes':'pill-no'}">${dir}</span>
         <span class="pill pill-price">Buy ~${p.entryTarget||'?'}¢</span>
