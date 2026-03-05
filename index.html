@@ -190,7 +190,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--white);min
       <div class="field"><label>💵 Bankroll ($)</label><input type="number" id="cfg-bank" value="100" oninput="saveSettings()"></div>
       <div class="field"><label>🏛️ Tax Rate (%)</label><input type="number" id="cfg-tax"  value="22"  oninput="saveSettings()"></div>
       <div class="field"><label>📅 Day #</label><input type="number" id="cfg-day"  value="1"   oninput="saveSettings()"></div>
-      <div class="field"><label>🎯 # of Plays</label><input type="number" id="cfg-plays" value="10"  oninput="saveSettings()"></div>
+      <div class="field"><label>🎯 # of Plays <span style="font-size:0.65rem;color:var(--dim)">(auto-scales)</span></label><input type="number" id="cfg-plays" value="10"  oninput="saveSettings()"></div>
+    </div>
+    <div id="scaling-tip" style="font-size:0.8rem;font-weight:700;color:var(--mid);padding:8px 12px;background:rgba(96,165,250,0.08);border:2px solid rgba(96,165,250,0.2);border-radius:10px;margin-top:4px;">
+      📊 <strong>Starter mode</strong> — 10 plays at ~10% each · 1 session/day recommended
     </div>
   </div>
   <div class="card">
@@ -218,6 +221,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--white);min
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
       <button class="btn btn-yellow" onclick="runBrief()" id="btn-brief">⚡ Brief Only</button>
+      <button class="btn btn-purple" onclick="runAfternoonRefresh()" id="btn-afternoon">🌆 Afternoon Refresh</button>
       <button class="btn btn-blue"   onclick="loadMarkets()" id="btn-markets">🔍 Scan Markets</button>
     </div>
     <div id="brief-ts" style="font-size:0.75rem;color:var(--dim);font-weight:700;margin-bottom:8px;"></div>
@@ -478,6 +482,7 @@ window.onload = () => {
 
   applySettings();
   updateHero();
+  showScalingTip(getOptimalPlays(S.bank));
   renderPortfolio();
   drawProj();
   updateSetupStatus();
@@ -508,12 +513,31 @@ function showTab(id,btn){
 }
 
 // ═══ SETTINGS ═══
+function getOptimalPlays(bank) {
+  if (bank <   500) return { plays: 10, pctPerPlay: 10,  sessions: 1, label: 'Starter' };
+  if (bank <  2000) return { plays: 12, pctPerPlay: 8,   sessions: 1, label: 'Growing' };
+  if (bank <  5000) return { plays: 15, pctPerPlay: 7,   sessions: 2, label: 'Scaling' };
+  if (bank < 20000) return { plays: 20, pctPerPlay: 5,   sessions: 2, label: 'Mid-tier' };
+  if (bank < 50000) return { plays: 25, pctPerPlay: 4,   sessions: 2, label: 'Advanced' };
+  return              { plays: 30, pctPerPlay: 3,   sessions: 3, label: 'Pro' };
+}
+
 function saveSettings(){
   S.bank=parseFloat(document.getElementById('cfg-bank').value)||100;
   S.tax=parseFloat(document.getElementById('cfg-tax').value)||22;
   S.day=parseInt(document.getElementById('cfg-day').value)||1;
-  S.plays=parseInt(document.getElementById('cfg-plays').value)||10;
-  saveState(); updateHero();
+  // Auto-scale plays based on bankroll unless manually overridden
+  const optimal = getOptimalPlays(S.bank);
+  const manualPlays = parseInt(document.getElementById('cfg-plays').value)||0;
+  S.plays = manualPlays || optimal.plays;
+  document.getElementById('cfg-plays').value = S.plays;
+  saveState(); updateHero(); showScalingTip(optimal);
+}
+
+function showScalingTip(optimal) {
+  const el = document.getElementById('scaling-tip');
+  if (!el) return;
+  el.innerHTML = `📊 <strong>${optimal.label} mode</strong> — ${optimal.plays} plays at ~${optimal.pctPerPlay}% each · ${optimal.sessions} session${optimal.sessions>1?'s':''}/day recommended`;
 }
 
 function updateHero(){
@@ -546,25 +570,38 @@ function updateHero(){
 async function fetchKalshiMarket(searchTerm) {
   const proxyUrl = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
   if (!proxyUrl) return null;
+
+  // Sports keywords to filter OUT
+  const sportsKeywords = ['nba','nfl','mlb','nhl','ncaa','wins by','points','rebounds',
+    'assists','touchdowns','yards','innings','goals','score','game','match','series',
+    'playoff','championship','tournament','athlete','player','team','sport'];
+
   try {
-    // Hit our Cloudflare Worker's /kalshi endpoint
     const base = proxyUrl.replace(/\/$/, '');
     const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(searchTerm)}`);
     const d = await r.json();
     const markets = d.markets || d.data || [];
     if (!markets.length) return null;
-    // Return the best match
-    const m = markets[0];
+
+    // Filter out sports markets, find best non-sports match
+    const filtered = markets.filter(m => {
+      const title = (m.title || m.question || '').toLowerCase();
+      return !sportsKeywords.some(kw => title.includes(kw));
+    });
+
+    const m = filtered.length ? filtered[0] : null;
+    if (!m) return null;
+
     return {
       ticker:    m.ticker || '',
       title:     m.title  || m.question || '',
-      yesBid:    m.yes_bid   != null ? m.yes_bid   : null,
-      yesAsk:    m.yes_ask   != null ? m.yes_ask   : null,
-      noBid:     m.no_bid    != null ? m.no_bid    : null,
-      noAsk:     m.no_ask    != null ? m.no_ask    : null,
-      lastPrice: m.last_price!= null ? m.last_price: null,
-      closeTime: m.close_time|| m.expiration_time || '',
-      url:       `https://kalshi.com/markets/${m.ticker||''}`,
+      yesBid:    m.yes_bid    != null ? m.yes_bid    : null,
+      yesAsk:    m.yes_ask    != null ? m.yes_ask    : null,
+      noBid:     m.no_bid     != null ? m.no_bid     : null,
+      noAsk:     m.no_ask     != null ? m.no_ask     : null,
+      lastPrice: m.last_price != null ? m.last_price : null,
+      closeTime: m.close_time || m.expiration_time || '',
+      url:       `https://kalshi.com/markets/${m.ticker || ''}`,
     };
   } catch(e) {
     console.warn('Kalshi fetch error:', e.message);
@@ -654,6 +691,52 @@ Try the 🧪 Test Connection button in ⚙️ Setup to diagnose.</div>`;
 }
 
 
+
+// ═══ AFTERNOON REFRESH ═══
+async function runAfternoonRefresh() {
+  if (!S.positions.length) { alert('Add some morning positions first, then run Afternoon Refresh!'); return; }
+  const btn = document.getElementById('btn-afternoon');
+  btn.disabled = true; btn.textContent = '⏳ Refreshing...';
+
+  const out = document.getElementById('brief-out');
+  out.className = 'ai-box loading';
+  out.innerHTML = '<div class="spinner"></div> Running afternoon check on your positions + new opportunities...';
+
+  const today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const posText = S.positions.map(p => {
+    const cost=(p.entry/100)*p.qty, cv=(p.curr/100)*p.qty, pnl=cv-cost;
+    return `${p.name} (${p.dir}) entry ${p.entry}¢ now ${p.curr}¢ P&L:${pnl>=0?'+':''}$${pnl.toFixed(2)}`;
+  }).join(' | ');
+
+  const numPlays = S.plays || 10;
+  const scaling = getOptimalPlays(S.bank);
+  const sizeNew = (S.bank * scaling.pctPerPlay / 100).toFixed(0);
+
+  const prompt = `Afternoon session ${today}. Trader has $${S.bank}, targeting 3%/day.
+Current positions: ${posText}
+
+Search today's afternoon news. Two tasks:
+1. POSITION CHECK: For each position, one-line update — HOLD/SELL/WATCH and why based on latest news.
+2. NEW OPPORTUNITIES: Find 3-5 NEW Kalshi contracts that have moved since this morning due to afternoon news. $${sizeNew} each.
+
+Format clearly with headers. Be concise, actionable, use emojis.`;
+
+  try {
+    const text = await callClaude(prompt, true, 700);
+    out.className = 'ai-box';
+    out.textContent = text;
+    S.lastBrief = text;
+    S.briefTs = new Date().toLocaleString() + ' (Afternoon)';
+    document.getElementById('brief-ts').textContent = '🌆 Afternoon refresh: ' + new Date().toLocaleString();
+    saveState();
+    showToast('🌆 Afternoon refresh done!');
+  } catch(e) {
+    out.className = 'ai-box';
+    showAiError(out, e);
+  }
+  btn.disabled = false; btn.textContent = '🌆 Afternoon Refresh';
+}
+
 // ═══ MORNING ROUTINE ═══
 async function runMorningRoutine() {
   const btn = document.getElementById('btn-morning');
@@ -735,11 +818,30 @@ Write a DAILY BRIEF (max 250 words, use emojis):
     await new Promise(r => setTimeout(r, 8000)); // 8 sec gap so rate limit resets
     setStep(2, 'active', 'Step 2: Building your 10-play sheet...');
 
-    const playsPrompt = `Today is ${today}. Kalshi 10-play sheet. Trader has $${S.bank}. Context: ${briefText.slice(0,300)}
-Search Kalshi.com for currently open markets. Use EXACT contract names from Kalshi.
-Return ONLY a valid JSON array, nothing else before or after it:
-[{"num":1,"market":"exact Kalshi contract title","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Mar 15"},...]
-Tiers: T1(plays 1-4) $${t1} Fed/economic | T2(plays 5-8) $${t2} political | T3(plays 9-10) $${t3} speculative`;
+    const numPlays = S.plays || 10;
+  const scaling = getOptimalPlays(S.bank);
+  const t1size = (S.bank * scaling.pctPerPlay/100 * 1.2).toFixed(0);
+  const t2size = (S.bank * scaling.pctPerPlay/100).toFixed(0);
+  const t3size = (S.bank * scaling.pctPerPlay/100 * 0.6).toFixed(0);
+  const t1end = Math.ceil(numPlays * 0.4);
+  const t2end = Math.ceil(numPlays * 0.8);
+
+  const playsPrompt = `Today is ${today}. Kalshi ${numPlays}-play sheet. Bankroll: $${S.bank}. Context: ${briefText.slice(0,300)}
+
+Search Kalshi.com for currently open prediction markets RIGHT NOW. Find REAL open contracts.
+You MUST return exactly ${numPlays} plays. Do not stop early.
+
+Return ONLY a raw JSON array — no text before or after, no markdown fences:
+[
+  {"num":1,"market":"EXACT Kalshi contract title word for word","kalshiSearch":"2-3 word search term","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1size},"reason":"one sentence why","risk":"LOW","expiry":"Mar 15"}
+]
+
+Tier rules — fill ALL slots:
+- Plays 1-${t1end}: Tier 1, $${t1size} each — Fed rates, CPI, jobs, economic data (HIGH confidence)
+- Plays ${t1end+1}-${t2end}: Tier 2, $${t2size} each — political, legislative, elections (MEDIUM confidence)  
+- Plays ${t2end+1}-${numPlays}: Tier 3, $${t3size} each — geopolitical, weather, wildcards (SPECULATIVE)
+
+IMPORTANT: Return all ${numPlays} plays. Search broadly across Fed, inflation, Senate, House, state politics, weather, crypto, commodities to find enough markets.`;
 
     const playsRaw = await callClaude(playsPrompt, true, 700); // web search ON so it can find real contracts
     const plays = safeJSON(playsRaw, []);
