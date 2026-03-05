@@ -776,11 +776,11 @@ After JSON: "SUMMARY:" + 2 sentences.`;
             <div style="font-size:0.8rem;color:var(--mid);font-weight:700;">${p.reason}</div>
           </div>
           <div style="text-align:center;flex-shrink:0;">
-            <div style="font-family:'Fredoka One',cursive;font-size:1.6rem;color:${actionColor[p.action]||'var(--mid)'};">${p.action}</div>
+            <div style="font-family:Fredoka One,cursive;font-size:1.6rem;color:${actionColor[p.action]||'var(--mid)'};">${p.action}</div>
             <div style="font-size:0.7rem;font-weight:800;color:${urgencyColor[p.urgency]||'var(--mid)'};">${p.urgency}</div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
-            <div style="font-family:'Fredoka One',cursive;font-size:1.3rem;color:${parseFloat(p.pnl_pct||0)>=0?'var(--green)':'var(--red)'};">${p.pnl_pct||'?'}%</div>
+            <div style="font-family:Fredoka One,cursive;font-size:1.3rem;color:${parseFloat(p.pnl_pct||0)>=0?'var(--green)':'var(--red)'};">${p.pnl_pct||'?'}%</div>
             <div style="font-size:0.65rem;font-weight:800;color:var(--dim);">Current P&L</div>
           </div>
         </div>`).join('');
@@ -803,6 +803,656 @@ After JSON: "SUMMARY:" + 2 sentences.`;
   // Scroll to results
   document.getElementById('sell-card').scrollIntoView({behavior:'smooth',block:'start'});
 }
+
+// ═══ MORNING ROUTINE ═══
+async function runAfternoonRefresh() {
+  if (!S.positions.length) { alert('Add some morning positions first!'); return; }
+  const btn = document.getElementById('btn-afternoon');
+  btn.disabled = true; btn.textContent = '⏳ Refreshing...';
+  const out = document.getElementById('brief-out');
+  out.className = 'ai-box loading';
+  out.innerHTML = '<div class="spinner"></div> Running afternoon check...';
+  const today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const posText = S.positions.map(p => p.name + ' (' + p.dir + ') entry ' + p.entry + '¢ now ' + p.curr + '¢').join(' | ');
+  const scaling = getOptimalPlays(S.bank);
+  const sizeNew = (S.bank * scaling.pctPerPlay / 100).toFixed(0);
+  const prompt = 'Afternoon ' + today + '. Trader $' + S.bank + ', 3%/day target. Positions: ' + posText + '. Search afternoon news. 1) POSITION CHECK: HOLD/SELL/WATCH each + why. 2) NEW OPPORTUNITIES: 3-5 new Kalshi contracts $' + sizeNew + ' each. Be concise, use emojis.';
+  try {
+    const text = await callClaude(prompt, true, 700);
+    out.className = 'ai-box'; out.textContent = text;
+    S.lastBrief = text; S.briefTs = new Date().toLocaleString() + ' (Afternoon)';
+    document.getElementById('brief-ts').textContent = '🌆 Afternoon: ' + new Date().toLocaleString();
+    saveState(); showToast('🌆 Afternoon refresh done!');
+  } catch(e) { out.className = 'ai-box'; showAiError(out, e); }
+  btn.disabled = false; btn.textContent = '🌆 Afternoon Refresh';
+}
+
+async function runMorningRoutine() {
+  const btn = document.getElementById('btn-morning');
+  const progress = document.getElementById('morning-progress');
+  btn.disabled = true; btn.textContent = '⏳ Running...';
+  progress.style.display = 'block';
+  const setStep = (num, status, text) => {
+    const el = document.getElementById('mstep-' + num);
+    if (!el) return;
+    const icons = {done:'✅',active:'⏳',wait:'⏸',err:'❌'};
+    el.style.color = status==='done'?'var(--green)':status==='active'?'var(--yellow)':status==='err'?'var(--red)':'var(--dim)';
+    el.textContent = icons[status] + ' ' + text;
+  };
+  const today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const portCtx = S.positions.length ? 'Holding: ' + S.positions.map(p=>p.name+' ('+p.dir+')').join('; ') : 'No positions yet.';
+  const scaling = getOptimalPlays(S.bank);
+  const t1 = (S.bank*scaling.pctPerPlay/100*1.2).toFixed(0);
+  const t2 = (S.bank*scaling.pctPerPlay/100).toFixed(0);
+  const t3 = (S.bank*scaling.pctPerPlay/100*0.6).toFixed(0);
+  const numPlays = S.plays || 10;
+
+  try {
+    setStep(1,'active','Step 1: Scanning news + finding opportunities...');
+    const briefPrompt = 'Today is ' + today + '. Kalshi prediction market analyst. Trader $' + S.bank + ', targeting 3%/day. ' + portCtx + '. Search today news (economic, Fed, politics, weather) and Kalshi.com. Write DAILY BRIEF max 200 words with emojis: 1. Top 3 News Signals 2. Top 4 Kalshi Opportunities (YES/NO, why, confidence) 3. Vibe: Hot/Warm/Slow';
+    const briefText = await callClaude(briefPrompt, true, 600);
+    const briefOut = document.getElementById('brief-out');
+    briefOut.className = 'ai-box'; briefOut.textContent = briefText;
+    S.lastBrief = briefText; S.briefTs = new Date().toLocaleString();
+    document.getElementById('brief-ts').textContent = '🕐 Generated: ' + S.briefTs;
+    saveState(); setStep(1,'done','Step 1: Brief ready! ✓');
+
+    await new Promise(r => setTimeout(r, 8000));
+    setStep(2,'active','Step 2: Building ' + numPlays + '-play sheet...');
+    const t1e = Math.ceil(numPlays*0.4), t2e = Math.ceil(numPlays*0.8);
+    const playsPrompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi plays. Bankroll $' + S.bank + '. Context: ' + briefText.slice(0,200) + '. Search Kalshi.com for open markets. Return ONLY raw JSON array, nothing else: [{"num":1,"market":"name","kalshiSearch":"2-3 words","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"},...] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN EXACTLY ' + numPlays + ' ITEMS.';
+    const playsRaw = await callClaude(playsPrompt, true, 1200);
+    const plays = safeJSON(playsRaw, []);
+    if (plays.length) {
+      S.lastPlays = plays; saveState(); renderPlayCards(plays);
+      setStep(2,'done','Step 2: ' + plays.length + ' plays generated! ✓');
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+      document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+      document.getElementById('panel-plays').classList.add('on');
+      document.querySelectorAll('.tab').forEach(t=>{ if(t.textContent.includes('10 Plays')) t.classList.add('on'); });
+      setStep(3,'active','Step 3: Loading live Kalshi prices...');
+      await loadAllPrices(plays);
+      setStep(3,'done','Step 3: Live prices loaded! ✓');
+    } else {
+      setStep(2,'err','Step 2: Try "Generate 10 Plays" separately — brief is saved!');
+    }
+    saveState(); showToast('☀️ Morning Routine complete!');
+  } catch(e) {
+    setStep(1,'err','Error: ' + e.message);
+    const briefOut = document.getElementById('brief-out');
+    briefOut.className = 'ai-box'; showAiError(briefOut, e);
+  }
+  btn.disabled = false; btn.textContent = '☀️ Run Morning Routine';
+}
+
+// ═══ DAILY BRIEF ═══
+async function runBrief(){
+  const btn=document.getElementById('btn-brief');
+  btn.disabled=true; btn.textContent='⏳ Thinking...';
+  const out=document.getElementById('brief-out');
+  out.className='ai-box loading';
+  out.innerHTML='<div class="spinner"></div> Scanning news + Kalshi markets...';
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const portCtx=S.positions.length?'Holding: '+S.positions.map(p=>p.name+' ('+p.dir+') at '+p.entry+'¢').join('; '):'No positions yet.';
+  const prompt='Today is '+today+'. Kalshi prediction market analyst. Trader $'+S.bank+', targeting 3%/day. '+portCtx+'. Search today news and Kalshi.com for open markets. Write DAILY BRIEF max 250 words: 1. Top 3 News Signals 2. Top 4 Kalshi Opportunities (market, YES/NO, why, confidence) 3. Positions check 4. Vibe: Hot/Warm/Slow';
+  try {
+    const text=await callClaude(prompt,true,600);
+    out.className='ai-box'; out.textContent=text;
+    S.lastBrief=text; S.briefTs=new Date().toLocaleString();
+    document.getElementById('brief-ts').textContent='🕐 Generated: '+S.briefTs;
+    saveState(); showToast('✅ Brief ready!');
+  } catch(e){ out.className='ai-box'; showAiError(out,e); }
+  btn.disabled=false; btn.textContent='⚡ Brief Only';
+}
+
+async function loadMarkets(){
+  const btn=document.getElementById('btn-markets'); btn.disabled=true; btn.textContent='⏳ Scanning...';
+  try {
+    const text=await callClaude('Search Kalshi.com for currently open prediction markets today '+new Date().toLocaleDateString()+'. Return JSON: [{"title":"market name","category":"Economic","yes_price":55,"expiry":"Mar 15"}] — max 10 markets, no markdown.',true,500);
+    const markets=safeJSON(text,[]);
+    document.getElementById('markets-card').style.display='block';
+    document.getElementById('mkt-count').textContent='— '+markets.length+' found';
+    document.getElementById('mkt-list').innerHTML=markets.map(m=>'<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:0.8rem;">'+m.title+' <span style="color:var(--green);">'+m.yes_price+'¢</span></div>').join('');
+  } catch(e){ document.getElementById('markets-card').style.display='block'; document.getElementById('mkt-list').innerHTML='<div style="color:var(--mid);">Markets will show here after scanning</div>'; }
+  btn.disabled=false; btn.textContent='🔍 Scan Markets';
+}
+
+// ═══ 10 PLAYS ═══
+async function generatePlays(){
+  const btn=document.getElementById('btn-plays'); btn.disabled=true; btn.textContent='⏳ Building plays...';
+  document.getElementById('plays-out').innerHTML='<div style="text-align:center;padding:50px;color:var(--mid);font-size:0.9rem;font-weight:700;"><div class="spinner" style="margin:0 auto 14px;width:32px;height:32px;border-width:4px;"></div>Building your play sheet...</div>';
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const brief=S.lastBrief?S.lastBrief.slice(0,200):'No brief yet.';
+  const numPlays=S.plays||10;
+  const scaling=getOptimalPlays(S.bank);
+  const t1=(S.bank*scaling.pctPerPlay/100*1.2).toFixed(0);
+  const t2=(S.bank*scaling.pctPerPlay/100).toFixed(0);
+  const t3=(S.bank*scaling.pctPerPlay/100*0.6).toFixed(0);
+  const t1e=Math.ceil(numPlays*0.4), t2e=Math.ceil(numPlays*0.8);
+  const prompt='Today is '+today+'. Generate exactly '+numPlays+' Kalshi prediction market plays. Bankroll $'+S.bank+'. Context: '+brief+'. Search Kalshi.com for open markets now. Return ONLY raw JSON array: [{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":'+t1+',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"},{"num":2,...},...] Fill ALL '+numPlays+' slots: plays 1-'+t1e+' Tier1 $'+t1+' Fed/economic | plays '+(t1e+1)+'-'+t2e+' Tier2 $'+t2+' political | plays '+(t2e+1)+'-'+numPlays+' Tier3 $'+t3+' speculative. YOU MUST RETURN ALL '+numPlays+' ITEMS.';
+  try {
+    const raw=await callClaude(prompt,true,1200);
+    const plays=safeJSON(raw,[]);
+    if(plays.length){ S.lastPlays=plays; saveState(); renderPlayCards(plays); setTimeout(()=>loadAllPrices(plays),500); }
+    else { document.getElementById('plays-out').innerHTML='<div class="card"><div style="font-size:0.85rem;color:var(--mid);white-space:pre-wrap;">'+raw+'</div></div>'; }
+  } catch(e){
+    const el=document.createElement('div'); el.style.padding='20px';
+    showAiError(el,e); document.getElementById('plays-out').innerHTML=''; document.getElementById('plays-out').appendChild(el);
+  }
+  btn.disabled=false; btn.textContent='⚡ Generate '+numPlays+' Plays';
+}
+
+function renderPlayCards(plays){
+  const tc={1:'tier1',2:'tier2',3:'tier3'}, tb={1:'pb-t1',2:'pb-t2',3:'pb-t3'}, tl={1:'🟢 Tier 1',2:'🔵 Tier 2',3:'🟠 Tier 3'}, tf={1:'var(--green)',2:'var(--blue)',3:'var(--orange)'};
+  document.getElementById('plays-out').innerHTML='<div class="plays-grid">'+plays.map(p=>{
+    const dir=(p.direction||'YES').toUpperCase();
+    const conf=Math.min(100,Math.max(0,p.confidence||50));
+    const pd=JSON.stringify(p).replace(/"/g,'&quot;');
+    return '<div class="play-card '+(tc[p.tier]||'tier2')+'" id="pcard-'+p.num+'">'
+      +'<div class="play-num">'+(p.num||'')+'</div>'
+      +'<span class="play-badge '+(tb[p.tier]||'pb-t2')+'">'+(tl[p.tier]||'Tier 2')+'</span>'
+      +'<div class="play-title">'+(p.market||'Market')+'</div>'
+      +'<div class="play-cat">'+(p.category||'')+' · Expires ~'+(p.expiry||'?')+'</div>'
+      +'<div id="price-'+p.num+'" style="background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">'
+          +'<div><div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;">Live Kalshi Price</div>'
+          +'<div id="liveprice-'+p.num+'" style="font-family:Fredoka One,cursive;font-size:1.4rem;color:var(--dim);">⏳ Loading...</div></div>'
+          +'<div style="text-align:right;"><div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;">AI Fair Value</div>'
+          +'<div style="font-family:Fredoka One,cursive;font-size:1.4rem;color:var(--yellow);">'+(p.fairValue||p.entryTarget||'?')+'¢</div></div>'
+        +'</div>'
+        +'<div id="edge-'+p.num+'" style="font-size:0.78rem;font-weight:800;color:var(--dim);">Calculating edge from live price...</div>'
+        +'<div style="display:flex;gap:6px;margin-top:8px;">'
+          +'<button id="pricebtn-'+p.num+'" data-num="'+p.num+'" data-s="'+encodeURIComponent(p.kalshiSearch||p.market||'')+'" data-c="'+(p.category||'')+'" onclick="var b=this;loadLivePrice(+b.dataset.num,decodeURIComponent(b.dataset.s),b.dataset.c)" style="flex:1;background:rgba(96,165,250,0.2);border:2px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;cursor:pointer;">🔄 Refresh Price</button>'
+          +'<a id="buylink-'+p.num+'" href="https://kalshi.com/markets?search='+encodeURIComponent(p.kalshiSearch||p.market||'')+'" target="_blank" style="flex:1;text-align:center;background:rgba(74,222,128,0.2);border:2px solid var(--green);color:var(--green);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;text-decoration:none;">🛒 Buy on Kalshi</a>'
+        +'</div>'
+      +'</div>'
+      +'<div class="play-pills">'
+        +'<span class="pill '+(dir==='YES'?'pill-yes':'pill-no')+'">'+dir+'</span>'
+        +'<span class="pill pill-size">$'+(p.size||'?')+'</span>'
+        +'<span class="pill" style="background:rgba(167,139,250,0.15);color:var(--purple);border:2px solid var(--purple);">🎯 '+conf+'% conf</span>'
+        +'<span class="pill" style="background:rgba(255,255,255,0.05);color:var(--dim);border:2px solid var(--border);">⚠️ '+(p.risk||'MED')+'</span>'
+      +'</div>'
+      +'<div class="conf-bar"><div class="conf-fill" style="width:'+conf+'%;background:'+(tf[p.tier]||'var(--blue)')+'"></div></div>'
+      +'<div class="play-reason">'+(p.reason||'')+'</div>'
+      +'<div class="play-btns">'
+        +'<button class="pbtn pbtn-add" data-num="'+p.num+'" onclick="addPlayToPort(S.lastPlays.find(x=>x.num==+this.dataset.num)||{})">➕ Add to Portfolio</button>'
+        +'<button class="pbtn pbtn-skip" onclick="this.closest(&quot;.play-card&quot;).style.opacity=&quot;0.35&quot;;this.textContent=&quot;⏭ Skipped&quot;">Skip</button>'
+      +'</div>'
+    +'</div>';
+  }).join('')+'</div>';
+}
+
+function addPlayToPort(play){
+  S.positions.push({name:play.market,dir:play.direction||'YES',entry:play.entryTarget||play.fairValue||60,curr:play.entryTarget||play.fairValue||60,qty:Math.round((play.size||10)/((play.entryTarget||60)/100)),cat:play.category||'Other',expiry:play.expiry||'—',thesis:play.reason||'',added:new Date().toLocaleDateString()});
+  saveState(); renderPortfolio(); updateHero(); showToast('✅ Added to portfolio!');
+}
+
+// ═══ PORTFOLIO ═══
+function addPosition(){
+  S.positions.push({name:document.getElementById('pf-name').value.trim()||'My Trade',dir:document.getElementById('pf-dir').value,entry:parseFloat(document.getElementById('pf-entry').value)||60,curr:parseFloat(document.getElementById('pf-curr').value)||60,qty:parseInt(document.getElementById('pf-qty').value)||10,cat:document.getElementById('pf-cat').value,expiry:document.getElementById('pf-exp').value||'—',thesis:document.getElementById('pf-thesis').value||'',added:new Date().toLocaleDateString()});
+  saveState(); renderPortfolio(); updateHero();
+  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-thesis'].forEach(id=>document.getElementById(id).value='');
+  showToast('✅ Position saved!');
+}
+function updateCurr(i,val){ S.positions[i].curr=parseFloat(val)||S.positions[i].curr; saveState(); renderPortfolio(); updateHero(); }
+function closePos(i){ if(!confirm('Close "'+S.positions[i].name+'"?'))return; S.positions.splice(i,1); saveState(); renderPortfolio(); updateHero(); showToast('📤 Closed!'); }
+
+function renderPortfolio(){
+  const el=document.getElementById('pos-list');
+  if(!S.positions.length){ el.innerHTML='<div style="text-align:center;padding:30px;color:var(--dim);font-size:0.9rem;font-weight:700;">🌱 No positions yet!</div>'; document.getElementById('pt-invested').textContent='$0'; document.getElementById('pt-pnl').textContent='$0.00'; document.getElementById('pt-ret').textContent='—'; document.getElementById('pt-count').textContent='0/10'; return; }
+  let ti=0,tp=0;
+  el.innerHTML=S.positions.map((p,i)=>{
+    const cost=(p.entry/100)*p.qty, cv=(p.curr/100)*p.qty, pnl=cv-cost, ret=cost>0?((pnl/cost)*100).toFixed(1):'0.0';
+    ti+=cost; tp+=pnl;
+    return '<div class="pos-row '+(pnl>=0?'pos-up':'pos-down')+'">'
+      +'<div><div class="pos-name">'+p.name+' <span style="font-size:0.72rem;color:'+(p.dir==='YES'?'var(--green)':'var(--red)')+';">'+p.dir+'</span></div>'
+      +'<div class="pos-meta">'+p.cat+' · Entry: '+p.entry+'¢ · '+p.qty+' contracts · Exp: '+p.expiry+'</div></div>'
+      +'<div><div style="font-size:0.72rem;font-weight:800;color:var(--mid);margin-bottom:2px;">Current (¢)</div>'
+      +'<input class="pos-curr-input" type="number" value="'+p.curr+'" onchange="updateCurr('+i+',this.value)"></div>'
+      +'<div class="pos-pnl" style="color:'+(pnl>=0?'var(--green)':'var(--red)')+';">'+(pnl>=0?'+':'')+'$'+pnl.toFixed(2)+'</div>'
+      +'<div style="font-weight:800;font-size:0.85rem;color:'+(pnl>=0?'var(--green)':'var(--red)')+';">'+(ret>=0?'+':'')+ret+'%</div>'
+      +'<button class="pos-close-btn" onclick="closePos('+i+')">✕</button>'
+    +'</div>';
+  }).join('');
+  const ar=ti>0?((tp/ti)*100).toFixed(1):'0.0';
+  const pe=document.getElementById('pt-pnl'); pe.textContent=(tp>=0?'+':'')+'$'+tp.toFixed(2); pe.style.color=tp>=0?'var(--green)':'var(--red)';
+  document.getElementById('pt-invested').textContent='$'+ti.toFixed(2);
+  document.getElementById('pt-ret').textContent=(ar>=0?'+':'')+ar+'%';
+  document.getElementById('pt-count').textContent=S.positions.length+'/10';
+}
+
+async function analyzePortfolio(){
+  if(!S.positions.length){alert('Add positions first!');return;}
+  const btn=document.getElementById('btn-analyze'); btn.disabled=true; btn.textContent='⏳ Analyzing...';
+  document.getElementById('analysis-card').style.display='block';
+  const out=document.getElementById('analysis-out');
+  out.className='ai-box loading'; out.innerHTML='<div class="spinner"></div> Checking your positions...';
+  const posText=S.positions.map(p=>'• '+p.name+' ('+p.dir+') entry '+p.entry+'¢ now '+p.curr+'¢, '+p.qty+' contracts').join('\n');
+  try {
+    const text=await callClaude('Today is '+new Date().toLocaleDateString()+'. Quick portfolio check:\n'+posText+'\nSearch latest news for each. 3-5 sentences, be direct: HOLD/SELL/WATCH each and why.',true,600);
+    out.className='ai-box'; out.textContent=text;
+  } catch(e){ out.className='ai-box'; showAiError(out,e); }
+  btn.disabled=false; btn.textContent='🤖 AI Analyze All';
+}
+
+// ═══ EXPORT ═══
+function exportCSV(){
+  const rows=[['Market','Dir','Entry¢','Current¢','Contracts','Cost$','P&L$','Return%','Category','Expiry','Thesis','Added']];
+  S.positions.forEach(p=>{ const cost=(p.entry/100)*p.qty,cv=(p.curr/100)*p.qty,pnl=cv-cost,ret=cost>0?((pnl/cost)*100).toFixed(1):'0'; rows.push([p.name,p.dir,p.entry,p.curr,p.qty,cost.toFixed(2),pnl.toFixed(2),ret,p.cat,p.expiry,p.thesis,p.added]); });
+  rows.push([],['Bankroll','$'+S.bank],['Tax Rate',S.tax+'%'],['Day',S.day],['Exported',new Date().toLocaleString()]);
+  download('kalshi-'+new Date().toISOString().slice(0,10)+'.csv',rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'),'text/csv');
+  showToast('📥 CSV downloaded!');
+}
+function exportJSON(){ download('kalshi-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(S,null,2),'application/json'); showToast('📥 JSON downloaded!'); }
+function download(name,content,type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); }
+
+// ═══ PROJECTOR ═══
+function setRate(r){ document.getElementById('pj-rate').value=r; drawProj(); }
+function drawProj(){
+  const start=parseFloat(document.getElementById('pj-start').value)||100;
+  const rate=parseFloat(document.getElementById('pj-rate').value)/100;
+  const days=parseInt(document.getElementById('pj-days').value)||302;
+  const tax=parseFloat(document.getElementById('pj-tax').value)/100;
+  const vals=[start]; for(let i=1;i<=days;i++) vals.push(+(vals[i-1]*(1+rate)).toFixed(2));
+  const net=vals.map(v=>start+(v-start)*(1-tax));
+  const tgt=587000, maxV=Math.max(...vals.slice(0,Math.min(days,50)),tgt);
+  const W=400,H=200,px=30,py=20;
+  const toX=i=>px+(i/days)*(W-px*2), toY=v=>H-py-((Math.log(v)-Math.log(start))/(Math.log(maxV)-Math.log(start)))*(H-py*2);
+  const gpts=vals.map((v,i)=>toX(i)+','+toY(v)).join(' ');
+  document.getElementById('proj-svg').innerHTML='<polyline points="'+gpts+'" fill="none" stroke="var(--green)" stroke-width="2.5"/>';
+  const finalNet=net[days];
+  document.getElementById('proj-result').innerHTML='<div style="font-family:Fredoka One;font-size:1.1rem;color:var(--green);">After '+days+' days @ '+Math.round(rate*100)+'%/day<br>Gross: $'+vals[days].toLocaleString()+'<br>After '+(tax*100)+'% tax: $'+finalNet.toLocaleString(undefined,{maximumFractionDigits:0})+'</div>';
+  let tbl=''; for(let i=1;i<=Math.min(days,60);i++){const v=vals[i],n=net[i]; tbl+='<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:4px 8px;font-size:0.72rem;font-weight:700;color:'+(n>=587000?'var(--yellow)':n>=100000?'var(--green)':n>=10000?'var(--blue)':'var(--dim)')+';">Day '+i+': $'+v.toLocaleString()+'</div>';}
+  document.getElementById('proj-table').innerHTML=tbl;
+}
+
+// ═══ SELL ADVISOR ═══
+async function sellAdvisor(){
+  if(!S.positions.length){ alert('Add some positions first!'); return; }
+  const btn=document.getElementById('btn-sell');
+  btn.disabled=true; btn.textContent='⏳ Checking...';
+  document.getElementById('sell-card').style.display='block';
+  const grid=document.getElementById('sell-grid');
+  const summary=document.getElementById('sell-summary');
+  grid.innerHTML='<div class="ai-box loading"><div class="spinner"></div> Scanning news for your positions...</div>';
+  summary.className='ai-box loading'; summary.innerHTML='<div class="spinner"></div> Building recommendations...';
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const posText=S.positions.map((p,i)=>{
+    const cost=(p.entry/100)*p.qty, cv=(p.curr/100)*p.qty, pnl=cv-cost;
+    const ret=cost>0?((pnl/cost)*100).toFixed(1):'0';
+    return 'Position '+(i+1)+': "'+p.name+'" ('+p.dir+') | Entry: '+p.entry+'¢ | Current: '+p.curr+'¢ | P&L: '+(pnl>=0?'+':'')+'$'+pnl.toFixed(2)+' ('+ret+'%)';
+  }).join('\n');
+  const brief=S.lastBrief?'\nContext: '+S.lastBrief.slice(0,300):'';
+  const prompt='Today '+today+'. Kalshi advisor. Give action calls for each position.\n'+posText+brief+'\nSearch news for each. JSON only:\n[{"name":"pos name","action":"SELL","urgency":"NOW","reason":"one sentence why","pnl_pct":"+5.2","emoji":"🔴"}]\nSELL/HOLD/WATCH | NOW/TODAY/NO RUSH | 🔴=SELL 🟡=WATCH 🟢=HOLD\nAfter JSON: "SUMMARY:" + 2 sentences.';
+  try {
+    const raw=await callClaude(prompt,true,800);
+    const summaryIdx=raw.indexOf('SUMMARY:');
+    const jsonPart=summaryIdx>-1?raw.slice(0,summaryIdx):raw;
+    const summaryPart=summaryIdx>-1?raw.slice(summaryIdx+8).trim():'';
+    const picks=safeJSON(jsonPart,[]);
+    if(picks.length){
+      const actionColor={'SELL':'var(--red)','WATCH':'var(--yellow)','HOLD':'var(--green)'};
+      const urgencyColor={'NOW':'var(--red)','TODAY':'var(--yellow)','NO RUSH':'var(--mid)'};
+      grid.innerHTML=picks.map(r=>'<div style="background:rgba(255,255,255,0.04);border:2px solid '+(actionColor[r.action]||'var(--border)')+';border-radius:12px;padding:12px 14px;margin-bottom:8px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+        +'<div style="font-weight:800;font-size:0.9rem;color:var(--text);">'+(r.emoji||'')+'  '+r.name+'</div>'
+        +'<div style="display:flex;gap:6px;">'
+        +'<span style="font-weight:800;font-size:0.85rem;color:'+(actionColor[r.action]||'var(--dim)')+';">'+r.action+'</span>'
+        +'<span style="font-weight:700;font-size:0.75rem;color:'+(urgencyColor[r.urgency]||'var(--mid)')+';">'+r.urgency+'</span>'
+        +'</div></div>'
+        +'<div style="font-size:0.8rem;color:var(--mid);font-weight:700;">'+r.reason+'</div>'
+        +'<div style="font-size:0.75rem;color:var(--dim);margin-top:4px;">P&L: '+r.pnl_pct+'%</div>'
+      +'</div>').join('');
+    } else { grid.innerHTML='<div style="color:var(--mid);font-size:0.85rem;font-weight:700;">'+jsonPart+'</div>'; }
+    summary.className='ai-box'; summary.textContent=summaryPart||'Check each position above!';
+    showToast('✅ Sell analysis ready!');
+  } catch(e){ grid.innerHTML=''; summary.className='ai-box'; showAiError(summary,e); }
+  btn.disabled=false; btn.textContent='🔴 Should I Sell?';
+  document.getElementById('sell-card').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ═══ SETUP / PROXY ═══
+function saveProxy(){
+  const url=(document.getElementById('proxy-input').value||'').trim();
+  if(!url||!url.startsWith('http')){ showToast('⚠️ Enter a valid https:// URL','var(--yellow)'); return; }
+  localStorage.setItem('kft-proxy',url); window.KALSHI_PROXY=url;
+  updateSetupStatus(); showToast('✅ Proxy URL saved!');
+}
+
+async function testProxy(){
+  const url=(document.getElementById('proxy-input').value||'').trim()||localStorage.getItem('kft-proxy')||'';
+  const res=document.getElementById('proxy-result');
+  if(!url){ res.textContent='⚠️ Enter your Worker URL first.'; res.style.color='var(--yellow)'; return; }
+  res.innerHTML='⏳ Testing Claude API...'; res.style.color='var(--mid)';
+  let claudeOk=false;
+  try {
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:20,messages:[{role:'user',content:'Reply OK'}]})});
+    const d=JSON.parse(await r.text());
+    claudeOk=!!(d.content&&d.content.length);
+  } catch(e){ claudeOk=false; }
+  res.innerHTML=(claudeOk?'✅':'❌')+' Claude API &nbsp;|&nbsp; ⏳ Testing Kalshi market feed...';
+  let kalshiResult='';
+  try {
+    const base=url.replace(/\/$/, '');
+    const kr=await fetch(`${base}/kalshi-all`);
+    const kd=await kr.json();
+    const markets=kd.markets||[];
+    const count=markets.length, total=kd.total||'?', filtered=kd.filtered||'?';
+    if(count>0){
+      const sample=markets.slice(0,4).map(m=>'• '+(m.title||m.question||m.ticker||'?').slice(0,50)).join('<br>');
+      const hasPrice=markets[0]&&(markets[0].yes_ask!=null||markets[0].last_price!=null);
+      kalshiResult='✅ Kalshi live feed working!<br><div style="font-size:0.75rem;color:var(--mid);margin:5px 0;">📊 '+total+' fetched → '+filtered+' sports removed → <strong style="color:var(--green);">'+count+' clean markets</strong></div><div style="font-size:0.73rem;color:var(--mid);line-height:1.7;">'+sample+'</div><div style="margin-top:5px;font-size:0.75rem;color:'+(hasPrice?'var(--green)':'var(--yellow)')+';">'+(hasPrice?'✅ Live prices confirmed!':'⚠️ No prices in response')+'</div>';
+    } else {
+      kalshiResult='⚠️ 0 clean markets returned.<br><div style="font-size:0.75rem;color:var(--mid);">Total: '+total+' | Filtered: '+filtered+'</div>';
+    }
+  } catch(e){ kalshiResult='❌ Kalshi feed failed: '+e.message+'<br><div style="font-size:0.75rem;color:var(--mid);">Redeploy your Cloudflare Worker with the latest code.</div>'; }
+  res.innerHTML='<div style="margin-bottom:8px;">'+(claudeOk?'✅ <strong>Claude API: Working!</strong>':'❌ <strong>Claude API: Failed</strong>')+'</div><div>'+kalshiResult+'</div>'+(claudeOk?'<div style="margin-top:8px;color:var(--green);font-weight:800;">Ready to trade! 🚀</div>':'');
+  res.style.color=claudeOk?'var(--green)':'var(--red)';
+}
+
+async function testKalshiSearch(){
+  const url=window.KALSHI_PROXY||localStorage.getItem('kft-proxy')||'';
+  const term=prompt('Search term to test:','fed rate');
+  if(!term||!url) return;
+  const base=url.replace(/\/$/, '');
+  try {
+    const r=await fetch(`${base}/kalshi-all`);
+    const d=await r.json();
+    const all=d.markets||[];
+    const words=term.toLowerCase().split(' ').filter(w=>w.length>2);
+    const scored=all.map(m=>{const title=(m.title||m.question||'').toLowerCase();const score=words.filter(w=>title.includes(w)).length;return{m,score};}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+    let msg = 'Search: ' + term + '\nTotal: ' + all.length + '\nMatches: ' + scored.length + '\n\n';
+    scored.slice(0,8).forEach(function(x,i){ msg += (i+1) + '. [' + x.score + '] ' + (x.m.title||x.m.question||'?').slice(0,60) + '\n   YES: ' + (x.m.yes_ask!=null?x.m.yes_ask+'c':'N/A') + '\n\n'; });
+    alert(msg);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+function updateSetupStatus(){
+  const url=localStorage.getItem('kft-proxy')||'';
+  const el=document.getElementById('setup-status'); if(!el) return;
+  if(url){ el.innerHTML='🟢 Proxy saved: <strong style="color:var(--green);">'+url+'</strong><br>Click 🧪 Test Connection to verify.'; if(document.getElementById('proxy-input')) document.getElementById('proxy-input').value=url; }
+  else { el.innerHTML='🔴 No proxy configured yet — follow steps 1–5 above.'; }
+}
+
+function copyCode(){
+  const code=`export default {
+  async fetch(request, env) {
+    if (request.method === 'OPTIONS') return new Response(null, {headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}});
+    const corsHeaders = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const url = new URL(request.url);
+    if (url.pathname === '/kalshi-all') {
+      try {
+        const resp = await fetch('https://api.elections.kalshi.com/trade-api/v2/markets?limit=200&status=open', {headers:{'Accept':'application/json','User-Agent':'Mozilla/5.0'}});
+        if (!resp.ok) return new Response(JSON.stringify({markets:[],error:'Kalshi '+resp.status}),{status:200,headers:corsHeaders});
+        const data = await resp.json();
+        const all = data.markets || [];
+        const SPORTS = ['lightning','sabres','flames','mammoth','lakers','celtics','heat','bulls','nets','knicks','warriors','clippers','nuggets','suns','mavs','mavericks','spurs','rockets','pelicans','grizzlies','jazz','kings','blazers','thunder','pacers','bucks','hawks','hornets','wizards','magic','pistons','cavaliers','raptors','sixers','patriots','chiefs','eagles','cowboys','49ers','bills','ravens','bengals','browns','steelers','texans','colts','titans','jaguars','broncos','raiders','chargers','seahawks','rams','cardinals','falcons','panthers','saints','buccaneers','vikings','bears','lions','packers','red sox','yankees','dodgers','astros','cubs','braves','mets','phillies','padres','wins by over','wins by more','points scored','goals scored','rebounds','touchdowns','yards','strikeouts','home runs','over 4.5','over 5.5','over 6.5','over 7.5','over 8.5','over 9.5','over 10.5','over 14.5','over 19.5','over 22.5','over 24.5','over 29.5','nba game','nfl game','mlb game','nhl game','ufc','super bowl','world series','stanley cup','nba finals','lopez','okongwu','kuzma','tatum','embiid','curry','durant','giannis','jokic','lillard','wembanyama','mccolum','mccollum','mahomes','kelce'];
+        const isSports = t => { const s=' '+t.toLowerCase()+' '; return SPORTS.some(k=>s.includes(k)); };
+        const clean = all.filter(m=>!isSports(m.title||m.question||''));
+        return new Response(JSON.stringify({markets:clean,count:clean.length,total:all.length,filtered:all.length-clean.length}),{status:200,headers:corsHeaders});
+      } catch(e) { return new Response(JSON.stringify({markets:[],error:e.message}),{status:200,headers:corsHeaders}); }
+    }
+    if (request.method !== 'POST') return new Response(JSON.stringify({status:'ok'}),{status:200,headers:corsHeaders});
+    const body = await request.clone().text();
+    const resp = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01','x-api-key':env.ANTHROPIC_API_KEY},body});
+    return new Response(await resp.text(),{status:resp.status,headers:corsHeaders});
+  }
+};`;
+  navigator.clipboard.writeText(code).then(()=>showToast('📋 Copied!')).catch(()=>showToast('Select and copy manually'));
+}
+
+// ═══ CLAUDE API ═══
+
+</script>
+</body>
+</html>+'<button class="pbtn pbtn-add" data-num="'+p.num+'" onclick="addPlayToPort(S.lastPlays.find(x=>x.num==+this.dataset.num)||{})">➕ Add to Portfolio</button>'
+          +'<a id="buylink-'+p.num+'" href="https://kalshi.com/markets?search='+encodeURIComponent(p.kalshiSearch||p.market||'')+'" target="_blank" style="flex:1;text-align:center;background:rgba(74,222,128,0.2);border:2px solid var(--green);color:var(--green);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;text-decoration:none;">🛒 Buy on Kalshi</a>'
+        +'</div>'
+      +'</div>'
+      +'<div class="play-pills">'
+        +'<span class="pill '+(dir==='YES'?'pill-yes':'pill-no')+'">'+dir+'</span>'
+        +'<span class="pill pill-size">$'+(p.size||'?')+'</span>'
+        +'<span class="pill" style="background:rgba(167,139,250,0.15);color:var(--purple);border:2px solid var(--purple);">🎯 '+conf+'% conf</span>'
+        +'<span class="pill" style="background:rgba(255,255,255,0.05);color:var(--dim);border:2px solid var(--border);">⚠️ '+(p.risk||'MED')+'</span>'
+      +'</div>'
+      +'<div class="conf-bar"><div class="conf-fill" style="width:'+conf+'%;background:'+(tf[p.tier]||'var(--blue)')+'"></div></div>'
+      +'<div class="play-reason">'+(p.reason||'')+'</div>'
+      +'<div class="play-btns">'
+        +'<button class="pbtn pbtn-add" onclick='addPlayToPort('+pd+')'>➕ Add to Portfolio</button>'
+        +'<button class="pbtn pbtn-skip" onclick="this.closest('.play-card').style.opacity='0.35';this.textContent='⏭ Skipped'">Skip</button>'
+      +'</div>'
+    +'</div>';
+  }).join('')+'</div>';
+}
+
+function addPlayToPort(play){
+  S.positions.push({name:play.market,dir:play.direction||'YES',entry:play.entryTarget||play.fairValue||60,curr:play.entryTarget||play.fairValue||60,qty:Math.round((play.size||10)/((play.entryTarget||60)/100)),cat:play.category||'Other',expiry:play.expiry||'—',thesis:play.reason||'',added:new Date().toLocaleDateString()});
+  saveState(); renderPortfolio(); updateHero(); showToast('✅ Added to portfolio!');
+}
+
+// ═══ PORTFOLIO ═══
+function addPosition(){
+  S.positions.push({name:document.getElementById('pf-name').value.trim()||'My Trade',dir:document.getElementById('pf-dir').value,entry:parseFloat(document.getElementById('pf-entry').value)||60,curr:parseFloat(document.getElementById('pf-curr').value)||60,qty:parseInt(document.getElementById('pf-qty').value)||10,cat:document.getElementById('pf-cat').value,expiry:document.getElementById('pf-exp').value||'—',thesis:document.getElementById('pf-thesis').value||'',added:new Date().toLocaleDateString()});
+  saveState(); renderPortfolio(); updateHero();
+  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-thesis'].forEach(id=>document.getElementById(id).value='');
+  showToast('✅ Position saved!');
+}
+function updateCurr(i,val){ S.positions[i].curr=parseFloat(val)||S.positions[i].curr; saveState(); renderPortfolio(); updateHero(); }
+function closePos(i){ if(!confirm('Close "'+S.positions[i].name+'"?'))return; S.positions.splice(i,1); saveState(); renderPortfolio(); updateHero(); showToast('📤 Closed!'); }
+
+function renderPortfolio(){
+  const el=document.getElementById('pos-list');
+  if(!S.positions.length){ el.innerHTML='<div style="text-align:center;padding:30px;color:var(--dim);font-size:0.9rem;font-weight:700;">🌱 No positions yet!</div>'; document.getElementById('pt-invested').textContent='$0'; document.getElementById('pt-pnl').textContent='$0.00'; document.getElementById('pt-ret').textContent='—'; document.getElementById('pt-count').textContent='0/10'; return; }
+  let ti=0,tp=0;
+  el.innerHTML=S.positions.map((p,i)=>{
+    const cost=(p.entry/100)*p.qty, cv=(p.curr/100)*p.qty, pnl=cv-cost, ret=cost>0?((pnl/cost)*100).toFixed(1):'0.0';
+    ti+=cost; tp+=pnl;
+    return '<div class="pos-row '+(pnl>=0?'pos-up':'pos-down')+'">'
+      +'<div><div class="pos-name">'+p.name+' <span style="font-size:0.72rem;color:'+(p.dir==='YES'?'var(--green)':'var(--red)')+';">'+p.dir+'</span></div>'
+      +'<div class="pos-meta">'+p.cat+' · Entry: '+p.entry+'¢ · '+p.qty+' contracts · Exp: '+p.expiry+'</div></div>'
+      +'<div><div style="font-size:0.72rem;font-weight:800;color:var(--mid);margin-bottom:2px;">Current (¢)</div>'
+      +'<input class="pos-curr-input" type="number" value="'+p.curr+'" onchange="updateCurr('+i+',this.value)"></div>'
+      +'<div class="pos-pnl" style="color:'+(pnl>=0?'var(--green)':'var(--red)')+';">'+(pnl>=0?'+':'')+'$'+pnl.toFixed(2)+'</div>'
+      +'<div style="font-weight:800;font-size:0.85rem;color:'+(pnl>=0?'var(--green)':'var(--red)')+';">'+(ret>=0?'+':'')+ret+'%</div>'
+      +'<button class="pos-close-btn" onclick="closePos('+i+')">✕</button>'
+    +'</div>';
+  }).join('');
+  const ar=ti>0?((tp/ti)*100).toFixed(1):'0.0';
+  const pe=document.getElementById('pt-pnl'); pe.textContent=(tp>=0?'+':'')+'$'+tp.toFixed(2); pe.style.color=tp>=0?'var(--green)':'var(--red)';
+  document.getElementById('pt-invested').textContent='$'+ti.toFixed(2);
+  document.getElementById('pt-ret').textContent=(ar>=0?'+':'')+ar+'%';
+  document.getElementById('pt-count').textContent=S.positions.length+'/10';
+}
+
+async function analyzePortfolio(){
+  if(!S.positions.length){alert('Add positions first!');return;}
+  const btn=document.getElementById('btn-analyze'); btn.disabled=true; btn.textContent='⏳ Analyzing...';
+  document.getElementById('analysis-card').style.display='block';
+  const out=document.getElementById('analysis-out');
+  out.className='ai-box loading'; out.innerHTML='<div class="spinner"></div> Checking your positions...';
+  const posText=S.positions.map(p=>'• '+p.name+' ('+p.dir+') entry '+p.entry+'¢ now '+p.curr+'¢, '+p.qty+' contracts').join('\n');
+  try {
+    const text=await callClaude('Today is '+new Date().toLocaleDateString()+'. Quick portfolio check:\n'+posText+'\nSearch latest news for each. 3-5 sentences, be direct: HOLD/SELL/WATCH each and why.',true,600);
+    out.className='ai-box'; out.textContent=text;
+  } catch(e){ out.className='ai-box'; showAiError(out,e); }
+  btn.disabled=false; btn.textContent='🤖 AI Analyze All';
+}
+
+// ═══ EXPORT ═══
+function exportCSV(){
+  const rows=[['Market','Dir','Entry¢','Current¢','Contracts','Cost$','P&L$','Return%','Category','Expiry','Thesis','Added']];
+  S.positions.forEach(p=>{ const cost=(p.entry/100)*p.qty,cv=(p.curr/100)*p.qty,pnl=cv-cost,ret=cost>0?((pnl/cost)*100).toFixed(1):'0'; rows.push([p.name,p.dir,p.entry,p.curr,p.qty,cost.toFixed(2),pnl.toFixed(2),ret,p.cat,p.expiry,p.thesis,p.added]); });
+  rows.push([],['Bankroll','$'+S.bank],['Tax Rate',S.tax+'%'],['Day',S.day],['Exported',new Date().toLocaleString()]);
+  download('kalshi-'+new Date().toISOString().slice(0,10)+'.csv',rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'),'text/csv');
+  showToast('📥 CSV downloaded!');
+}
+function exportJSON(){ download('kalshi-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(S,null,2),'application/json'); showToast('📥 JSON downloaded!'); }
+function download(name,content,type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); }
+
+// ═══ PROJECTOR ═══
+function setRate(r){ document.getElementById('pj-rate').value=r; drawProj(); }
+function drawProj(){
+  const start=parseFloat(document.getElementById('pj-start').value)||100;
+  const rate=parseFloat(document.getElementById('pj-rate').value)/100;
+  const days=parseInt(document.getElementById('pj-days').value)||302;
+  const tax=parseFloat(document.getElementById('pj-tax').value)/100;
+  const vals=[start]; for(let i=1;i<=days;i++) vals.push(+(vals[i-1]*(1+rate)).toFixed(2));
+  const net=vals.map(v=>start+(v-start)*(1-tax));
+  const tgt=587000, maxV=Math.max(...vals.slice(0,Math.min(days,50)),tgt);
+  const W=400,H=200,px=30,py=20;
+  const toX=i=>px+(i/days)*(W-px*2), toY=v=>H-py-((Math.log(v)-Math.log(start))/(Math.log(maxV)-Math.log(start)))*(H-py*2);
+  const gpts=vals.map((v,i)=>toX(i)+','+toY(v)).join(' ');
+  document.getElementById('proj-svg').innerHTML='<polyline points="'+gpts+'" fill="none" stroke="var(--green)" stroke-width="2.5"/>';
+  const finalNet=net[days];
+  document.getElementById('proj-result').innerHTML='<div style="font-family:'Fredoka One';font-size:1.1rem;color:var(--green);">After '+days+' days @ '+Math.round(rate*100)+'%/day<br>Gross: $'+vals[days].toLocaleString()+'<br>After '+(tax*100)+'% tax: $'+finalNet.toLocaleString(undefined,{maximumFractionDigits:0})+'</div>';
+  let tbl=''; for(let i=1;i<=Math.min(days,60);i++){const v=vals[i],n=net[i]; tbl+='<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:4px 8px;font-size:0.72rem;font-weight:700;color:'+(n>=587000?'var(--yellow)':n>=100000?'var(--green)':n>=10000?'var(--blue)':'var(--dim)')+';">Day '+i+': $'+v.toLocaleString()+'</div>';}
+  document.getElementById('proj-table').innerHTML=tbl;
+}
+
+// ═══ SELL ADVISOR ═══
+async function sellAdvisor(){
+  if(!S.positions.length){ alert('Add some positions first!'); return; }
+  const btn=document.getElementById('btn-sell');
+  btn.disabled=true; btn.textContent='⏳ Checking...';
+  document.getElementById('sell-card').style.display='block';
+  const grid=document.getElementById('sell-grid');
+  const summary=document.getElementById('sell-summary');
+  grid.innerHTML='<div class="ai-box loading"><div class="spinner"></div> Scanning news for your positions...</div>';
+  summary.className='ai-box loading'; summary.innerHTML='<div class="spinner"></div> Building recommendations...';
+  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const posText=S.positions.map((p,i)=>{
+    const cost=(p.entry/100)*p.qty, cv=(p.curr/100)*p.qty, pnl=cv-cost;
+    const ret=cost>0?((pnl/cost)*100).toFixed(1):'0';
+    return 'Position '+(i+1)+': "'+p.name+'" ('+p.dir+') | Entry: '+p.entry+'¢ | Current: '+p.curr+'¢ | P&L: '+(pnl>=0?'+':'')+'$'+pnl.toFixed(2)+' ('+ret+'%)';
+  }).join('\n');
+  const brief=S.lastBrief?'\nContext: '+S.lastBrief.slice(0,300):'';
+  const prompt='Today '+today+'. Kalshi advisor. Give action calls for each position.\n'+posText+brief+'\nSearch news for each. JSON only:\n[{"name":"pos name","action":"SELL","urgency":"NOW","reason":"one sentence why","pnl_pct":"+5.2","emoji":"🔴"}]\nSELL/HOLD/WATCH | NOW/TODAY/NO RUSH | 🔴=SELL 🟡=WATCH 🟢=HOLD\nAfter JSON: "SUMMARY:" + 2 sentences.';
+  try {
+    const raw=await callClaude(prompt,true,800);
+    const summaryIdx=raw.indexOf('SUMMARY:');
+    const jsonPart=summaryIdx>-1?raw.slice(0,summaryIdx):raw;
+    const summaryPart=summaryIdx>-1?raw.slice(summaryIdx+8).trim():'';
+    const picks=safeJSON(jsonPart,[]);
+    if(picks.length){
+      const actionColor={'SELL':'var(--red)','WATCH':'var(--yellow)','HOLD':'var(--green)'};
+      const urgencyColor={'NOW':'var(--red)','TODAY':'var(--yellow)','NO RUSH':'var(--mid)'};
+      grid.innerHTML=picks.map(r=>'<div style="background:rgba(255,255,255,0.04);border:2px solid '+(actionColor[r.action]||'var(--border)')+';border-radius:12px;padding:12px 14px;margin-bottom:8px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+        +'<div style="font-weight:800;font-size:0.9rem;color:var(--text);">'+(r.emoji||'')+'  '+r.name+'</div>'
+        +'<div style="display:flex;gap:6px;">'
+        +'<span style="font-weight:800;font-size:0.85rem;color:'+(actionColor[r.action]||'var(--dim)')+';">'+r.action+'</span>'
+        +'<span style="font-weight:700;font-size:0.75rem;color:'+(urgencyColor[r.urgency]||'var(--mid)')+';">'+r.urgency+'</span>'
+        +'</div></div>'
+        +'<div style="font-size:0.8rem;color:var(--mid);font-weight:700;">'+r.reason+'</div>'
+        +'<div style="font-size:0.75rem;color:var(--dim);margin-top:4px;">P&L: '+r.pnl_pct+'%</div>'
+      +'</div>').join('');
+    } else { grid.innerHTML='<div style="color:var(--mid);font-size:0.85rem;font-weight:700;">'+jsonPart+'</div>'; }
+    summary.className='ai-box'; summary.textContent=summaryPart||'Check each position above!';
+    showToast('✅ Sell analysis ready!');
+  } catch(e){ grid.innerHTML=''; summary.className='ai-box'; showAiError(summary,e); }
+  btn.disabled=false; btn.textContent='🔴 Should I Sell?';
+  document.getElementById('sell-card').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ═══ SETUP / PROXY ═══
+function saveProxy(){
+  const url=(document.getElementById('proxy-input').value||'').trim();
+  if(!url||!url.startsWith('http')){ showToast('⚠️ Enter a valid https:// URL','var(--yellow)'); return; }
+  localStorage.setItem('kft-proxy',url); window.KALSHI_PROXY=url;
+  updateSetupStatus(); showToast('✅ Proxy URL saved!');
+}
+
+async function testProxy(){
+  const url=(document.getElementById('proxy-input').value||'').trim()||localStorage.getItem('kft-proxy')||'';
+  const res=document.getElementById('proxy-result');
+  if(!url){ res.textContent='⚠️ Enter your Worker URL first.'; res.style.color='var(--yellow)'; return; }
+  res.innerHTML='⏳ Testing Claude API...'; res.style.color='var(--mid)';
+  let claudeOk=false;
+  try {
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:20,messages:[{role:'user',content:'Reply OK'}]})});
+    const d=JSON.parse(await r.text());
+    claudeOk=!!(d.content&&d.content.length);
+  } catch(e){ claudeOk=false; }
+  res.innerHTML=(claudeOk?'✅':'❌')+' Claude API &nbsp;|&nbsp; ⏳ Testing Kalshi market feed...';
+  let kalshiResult='';
+  try {
+    const base=url.replace(/\/$/, '');
+    const kr=await fetch(`${base}/kalshi-all`);
+    const kd=await kr.json();
+    const markets=kd.markets||[];
+    const count=markets.length, total=kd.total||'?', filtered=kd.filtered||'?';
+    if(count>0){
+      const sample=markets.slice(0,4).map(m=>'• '+(m.title||m.question||m.ticker||'?').slice(0,50)).join('<br>');
+      const hasPrice=markets[0]&&(markets[0].yes_ask!=null||markets[0].last_price!=null);
+      kalshiResult='✅ Kalshi live feed working!<br><div style="font-size:0.75rem;color:var(--mid);margin:5px 0;">📊 '+total+' fetched → '+filtered+' sports removed → <strong style="color:var(--green);">'+count+' clean markets</strong></div><div style="font-size:0.73rem;color:var(--mid);line-height:1.7;">'+sample+'</div><div style="margin-top:5px;font-size:0.75rem;color:'+(hasPrice?'var(--green)':'var(--yellow)')+';">'+(hasPrice?'✅ Live prices confirmed!':'⚠️ No prices in response')+'</div>';
+    } else {
+      kalshiResult='⚠️ 0 clean markets returned.<br><div style="font-size:0.75rem;color:var(--mid);">Total: '+total+' | Filtered: '+filtered+'</div>';
+    }
+  } catch(e){ kalshiResult='❌ Kalshi feed failed: '+e.message+'<br><div style="font-size:0.75rem;color:var(--mid);">Redeploy your Cloudflare Worker with the latest code.</div>'; }
+  res.innerHTML='<div style="margin-bottom:8px;">'+(claudeOk?'✅ <strong>Claude API: Working!</strong>':'❌ <strong>Claude API: Failed</strong>')+'</div><div>'+kalshiResult+'</div>'+(claudeOk?'<div style="margin-top:8px;color:var(--green);font-weight:800;">Ready to trade! 🚀</div>':'');
+  res.style.color=claudeOk?'var(--green)':'var(--red)';
+}
+
+async function testKalshiSearch(){
+  const url=window.KALSHI_PROXY||localStorage.getItem('kft-proxy')||'';
+  const term=prompt('Search term to test:','fed rate');
+  if(!term||!url) return;
+  const base=url.replace(/\/$/, '');
+  try {
+    const r=await fetch(`${base}/kalshi-all`);
+    const d=await r.json();
+    const all=d.markets||[];
+    const words=term.toLowerCase().split(' ').filter(w=>w.length>2);
+    const scored=all.map(m=>{const title=(m.title||m.question||'').toLowerCase();const score=words.filter(w=>title.includes(w)).length;return{m,score};}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+    let msg='Search: "'+term+'"
+Total clean markets: '+all.length+'
+Matches: '+scored.length+'
+
+';
+    scored.slice(0,8).forEach(({m,score},i)=>{msg+=(i+1)+'. [score:'+score+'] '+(m.title||m.question||'?').slice(0,60)+'
+   YES ask: '+(m.yes_ask!=null?m.yes_ask+'¢':'N/A')+'
+
+';});
+    alert(msg);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+function updateSetupStatus(){
+  const url=localStorage.getItem('kft-proxy')||'';
+  const el=document.getElementById('setup-status'); if(!el) return;
+  if(url){ el.innerHTML='🟢 Proxy saved: <strong style="color:var(--green);">'+url+'</strong><br>Click 🧪 Test Connection to verify.'; if(document.getElementById('proxy-input')) document.getElementById('proxy-input').value=url; }
+  else { el.innerHTML='🔴 No proxy configured yet — follow steps 1–5 above.'; }
+}
+
+function copyCode(){
+  const code=`export default {
+  async fetch(request, env) {
+    if (request.method === 'OPTIONS') return new Response(null, {headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'POST,GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}});
+    const corsHeaders = {'Access-Control-Allow-Origin':'*','Content-Type':'application/json'};
+    const url = new URL(request.url);
+    if (url.pathname === '/kalshi-all') {
+      try {
+        const resp = await fetch('https://api.elections.kalshi.com/trade-api/v2/markets?limit=200&status=open', {headers:{'Accept':'application/json','User-Agent':'Mozilla/5.0'}});
+        if (!resp.ok) return new Response(JSON.stringify({markets:[],error:'Kalshi '+resp.status}),{status:200,headers:corsHeaders});
+        const data = await resp.json();
+        const all = data.markets || [];
+        const SPORTS = ['lightning','sabres','flames','mammoth','lakers','celtics','heat','bulls','nets','knicks','warriors','clippers','nuggets','suns','mavs','mavericks','spurs','rockets','pelicans','grizzlies','jazz','kings','blazers','thunder','pacers','bucks','hawks','hornets','wizards','magic','pistons','cavaliers','raptors','sixers','patriots','chiefs','eagles','cowboys','49ers','bills','ravens','bengals','browns','steelers','texans','colts','titans','jaguars','broncos','raiders','chargers','seahawks','rams','cardinals','falcons','panthers','saints','buccaneers','vikings','bears','lions','packers','red sox','yankees','dodgers','astros','cubs','braves','mets','phillies','padres','wins by over','wins by more','points scored','goals scored','rebounds','touchdowns','yards','strikeouts','home runs','over 4.5','over 5.5','over 6.5','over 7.5','over 8.5','over 9.5','over 10.5','over 14.5','over 19.5','over 22.5','over 24.5','over 29.5','nba game','nfl game','mlb game','nhl game','ufc','super bowl','world series','stanley cup','nba finals','lopez','okongwu','kuzma','tatum','embiid','curry','durant','giannis','jokic','lillard','wembanyama','mccolum','mccollum','mahomes','kelce'];
+        const isSports = t => { const s=' '+t.toLowerCase()+' '; return SPORTS.some(k=>s.includes(k)); };
+        const clean = all.filter(m=>!isSports(m.title||m.question||''));
+        return new Response(JSON.stringify({markets:clean,count:clean.length,total:all.length,filtered:all.length-clean.length}),{status:200,headers:corsHeaders});
+      } catch(e) { return new Response(JSON.stringify({markets:[],error:e.message}),{status:200,headers:corsHeaders}); }
+    }
+    if (request.method !== 'POST') return new Response(JSON.stringify({status:'ok'}),{status:200,headers:corsHeaders});
+    const body = await request.clone().text();
+    const resp = await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01','x-api-key':env.ANTHROPIC_API_KEY},body});
+    return new Response(await resp.text(),{status:resp.status,headers:corsHeaders});
+  }
+};`;
+  navigator.clipboard.writeText(code).then(()=>showToast('📋 Copied!')).catch(()=>showToast('Select and copy manually'));
+}
+
+// ═══ CLAUDE API ═══
+
 </script>
 </body>
 </html>
