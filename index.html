@@ -418,10 +418,53 @@ async function getAllMarkets() {
 }
 
 function scoreMatch(market, searchTerm) {
-  var title = (market.title || market.question || '').toLowerCase();
-  var words = searchTerm.toLowerCase().split(' ').filter(function(w) { return w.length > 2; });
+  var title  = (market.title  || market.question || '').toLowerCase();
+  var ticker = (market.ticker || '').toLowerCase();
+  var term   = searchTerm.toLowerCase().trim();
+
+  // 1. Exact phrase in title
+  if (title.indexOf(term) >= 0) return 100;
+
+  // 2. Ticker contains term (e.g. "fed" matches KXFED-27APR)
+  if (ticker.indexOf(term.replace(/\s+/g, '')) >= 0) return 90;
+  if (ticker.indexOf(term.split(' ')[0]) >= 0) return 85;
+
+  // 3. Keyword map: AI-generated terms -> Kalshi ticker/title keywords
+  var map = [
+    [['fed rate','federal funds','fomc','rate cut','rate hike','interest rate','fed meeting'], ['kxfed','kxfomc','federal funds rate','feds']],
+    [['cpi','inflation','consumer price'], ['kxcpi','inflation','consumer price']],
+    [['pce','core pce','personal consumption'], ['kxpce','pce']],
+    [['jobs','nonfarm','payroll','employment report'], ['kxjobs','kxnfp','nonfarm','payroll']],
+    [['unemployment','jobless'], ['kxunemployment','unemployment']],
+    [['gdp','growth','recession'], ['kxgdp','gdp','recession']],
+    [['bitcoin','btc','crypto'], ['kxbtc','bitcoin','btc']],
+    [['ethereum','eth'], ['kxeth','ethereum','eth']],
+    [['s&p','spx','stock market','sp500'], ['kxspx','s&p','sp 500']],
+    [['oil','crude','wti'], ['kxoil','oil','crude','wti']],
+    [['gold'], ['kxgold','gold price']],
+    [['tariff','trade war','import tax'], ['kxtariff','tariff']],
+    [['shutdown','government shutdown'], ['kxshutdown','shutdown']],
+    [['debt ceiling','default'], ['kxdebt','debt ceiling']],
+    [['trump','executive order'], ['kxtrump','trump']],
+    [['senate','house','congress','legislation'], ['kxsenate','kxhouse','senate','house']],
+    [['hurricane','storm','weather'], ['kxhurricane','hurricane']],
+  ];
+
+  for (var i = 0; i < map.length; i++) {
+    var searchKeys = map[i][0];
+    var kalshiKeys = map[i][1];
+    var termMatches = searchKeys.some(function(k) { return term.indexOf(k) >= 0 || k.indexOf(term) >= 0; });
+    var titleMatches = kalshiKeys.some(function(k) { return title.indexOf(k) >= 0 || ticker.indexOf(k) >= 0; });
+    if (termMatches && titleMatches) return 80;
+  }
+
+  // 4. Individual word scoring
+  var words = term.split(/[\s\-_,]+/).filter(function(w) { return w.length > 2; });
   var score = 0;
-  words.forEach(function(w) { if (title.indexOf(w) >= 0) score += w.length; });
+  words.forEach(function(w) {
+    if (title.indexOf(w) >= 0)  score += w.length * 3;
+    if (ticker.indexOf(w) >= 0) score += w.length * 2;
+  });
   return score;
 }
 
