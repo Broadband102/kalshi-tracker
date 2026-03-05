@@ -667,7 +667,14 @@ async function runMorningRoutine() {
 
   try {
     setStep(1, 'active', 'Step 1: Scanning news + finding opportunities...');
-    var briefPrompt = 'Today is ' + today + '. Kalshi prediction market analyst. Trader $' + S.bank + ', targeting 3%/day to reach $587K. ' + portCtx + '. Search today\'s news (Fed, economic data, politics, weather) and Kalshi.com. Write DAILY BRIEF max 200 words with emojis: 1. Top 3 News Signals 2. Top 4 Kalshi Opportunities (YES/NO, why, confidence) 3. Vibe: Hot/Warm/Slow';
+    var briefPrompt = 'Today is ' + today + '. Kalshi prediction market analyst. Trader $' + S.bank + ', targeting 3%/day. ' + portCtx + '. Search today\'s news across ALL these categories and find mispriced Kalshi contracts:\n'
+    + '📊 ECONOMICS: Fed/FOMC decisions, CPI, jobs, GDP, recession signals\n'
+    + '🌍 GEOPOLITICS: Ukraine/Russia, China/Taiwan, Middle East, sanctions, NATO\n'
+    + '🏛️ POLITICS: Trump executive orders, Senate/House votes, legislation, appointments\n'
+    + '💰 CRYPTO: BTC/ETH price levels, regulatory news, exchange events\n'
+    + '🚀 TECH: SpaceX launches, FDA approvals, AI announcements, earnings surprises\n'
+    + '🌪️ CLIMATE: Hurricanes, extreme weather, temperature records\n'
+    + 'Write DAILY BRIEF max 250 words with emojis covering the best opportunities across ALL categories: 1. Top 5 News Signals (with category) 2. Top 3 Mispriced Markets 3. Risk Watch. Be specific with numbers and tickers.';
     var briefText = await callClaude(briefPrompt, true, 600);
     var briefOut = document.getElementById('brief-out');
     briefOut.className = 'ai-box'; briefOut.textContent = briefText;
@@ -690,7 +697,7 @@ async function runMorningRoutine() {
       + ownedCtx
       + '\n\nPick ' + numPlays + ' plays. Copy EXACT ticker+title. Nearest expiry. No duplicates. Return ONLY JSON:'
       + ' [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"why","risk":"LOW","expiry":"Mar 17"}]'
-      + ' 1-' + t1e + ' T1 $' + t1 + ' economic | ' + (t1e+1) + '-' + t2e + ' T2 $' + t2 + ' political | ' + (t2e+1) + '-' + numPlays + ' T3 $' + t3 + ' speculative. ALL ' + numPlays + ' items.'
+      + ' 1-' + t1e + ' T1 $' + t1 + ' economic/fed | ' + (t1e+1) + '-' + t2e + ' T2 $' + t2 + ' geopolitics/crypto/politics | ' + (t2e+1) + '-' + numPlays + ' T3 $' + t3 + ' tech/climate/speculative. ALL ' + numPlays + ' items.'
     var playsRaw = await callClaude(playsPrompt, false, 1200);
     var plays = safeJSON(playsRaw, []);
 
@@ -780,7 +787,7 @@ async function generatePlays() {
     + (alreadyOwned ? '\n\n' + alreadyOwned : '')
     + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry. No duplicate contracts.'
     + ' Return ONLY JSON array: [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"}]'
-    + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' political/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' speculative.'
+    + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic/fed/cpi | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' geopolitics/politics/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' tech/climate/speculative.'
     + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list.';
   try {
     var raw = await callClaude(prompt, false, 1200);
