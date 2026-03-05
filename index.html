@@ -654,9 +654,13 @@ async function runMorningRoutine() {
     var marketList = markets.slice(0, 80).map(function(m) {
       return (m.ticker || '') + ': ' + (m.title || m.question || '');
     }).join('\n');
+    var ownedCtx = S.positions.length
+      ? '\n\nSKIP these — already owned: ' + S.positions.map(function(p) { return p.name; }).join(', ') + '.'
+      : '';
     var playsPrompt = 'Today is ' + today + '. Kalshi analyst. Bankroll $' + S.bank + '.'
       + '\n\nREAL open Kalshi contracts (use ONLY these):\n' + marketList
-      + '\n\nPick ' + numPlays + ' plays from the list. Copy EXACT ticker+title. Nearest expiry. Return ONLY JSON:'
+      + ownedCtx
+      + '\n\nPick ' + numPlays + ' plays. Copy EXACT ticker+title. Nearest expiry. No duplicates. Return ONLY JSON:'
       + ' [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"why","risk":"LOW","expiry":"Mar 17"}]'
       + ' 1-' + t1e + ' T1 $' + t1 + ' economic | ' + (t1e+1) + '-' + t2e + ' T2 $' + t2 + ' political | ' + (t2e+1) + '-' + numPlays + ' T3 $' + t3 + ' speculative. ALL ' + numPlays + ' items.'
     var playsRaw = await callClaude(playsPrompt, false, 1200);
@@ -738,10 +742,15 @@ async function generatePlays() {
     return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '');
   }).join('\n');
 
+  var alreadyOwned = S.positions.length
+    ? 'SKIP these — already owned: ' + S.positions.map(function(p) { return p.name; }).join(', ') + '.'
+    : '';
+
   var prompt = 'Today is ' + today + '. Kalshi analyst. Bankroll $' + S.bank + '. Context: ' + brief
     + '\n\nHere are the REAL currently open Kalshi contracts. Pick ONLY from this list:\n'
     + marketList
-    + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry.'
+    + (alreadyOwned ? '\n\n' + alreadyOwned : '')
+    + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry. No duplicate contracts.'
     + ' Return ONLY JSON array: [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"}]'
     + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' political/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' speculative.'
     + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list.';
