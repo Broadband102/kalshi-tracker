@@ -80,6 +80,7 @@ body{background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;min-
 .proj-svg-wrap{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--card2);border:2px solid var(--green);border-radius:12px;padding:10px 18px;font-weight:800;font-size:0.85rem;z-index:9999;animation:fadeIn 0.2s ease;pointer-events:none;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .morning-banner{background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,146,60,0.08));border:2px solid rgba(251,191,36,0.3);border-radius:14px;padding:14px;margin-bottom:14px;}
 .api-err{background:rgba(248,113,113,0.1);border:2px solid var(--red);border-radius:12px;padding:12px;font-size:0.82rem;line-height:1.6;color:var(--text);}
 .proxy-inp-wrap{display:flex;gap:8px;align-items:stretch;margin:10px 0;}
@@ -175,6 +176,10 @@ select.inp option{background:var(--card);}
       <input class="inp" id="pf-curr" type="number" placeholder="Current ¢" style="width:90px;">
       <input class="inp" id="pf-qty" type="number" placeholder="Qty" style="width:70px;">
       <input class="inp" id="pf-exp" placeholder="Expiry" style="width:80px;">
+    </div>
+    <div class="input-row">
+      <div><div style="font-size:0.7rem;font-weight:800;color:var(--red);">Stop-Loss ¢</div><input class="inp" id="pf-stop" type="number" placeholder="e.g. 40" style="width:90px;border-color:var(--red);"></div>
+      <div style="font-size:0.72rem;color:var(--mid);font-weight:700;align-self:flex-end;padding-bottom:6px;">← if price drops below this, you'll get an alert</div>
     </div>
     <input class="inp inp-lg" id="pf-thesis" placeholder="Thesis (optional)" style="margin-bottom:10px;">
     <button class="btn btn-green" onclick="addPosition()">➕ Add Position</button>
@@ -511,12 +516,15 @@ async function fetchKalshiMarket(searchTerm) {
   if (!scored.length) return null;
   var m = scored[0].m;
   return {
-    ticker:    m.ticker    || '',
-    title:     m.title     || m.question || '',
-    yesAsk:    m.yes_ask   != null ? m.yes_ask   : null,
-    noAsk:     m.no_ask    != null ? m.no_ask    : null,
+    ticker:    m.ticker     || '',
+    title:     m.title      || m.question || '',
+    yesAsk:    m.yes_ask    != null ? m.yes_ask    : null,
+    noAsk:     m.no_ask     != null ? m.no_ask     : null,
+    yesBid:    m.yes_bid    != null ? m.yes_bid    : null,
     lastPrice: m.last_price != null ? m.last_price : null,
-    url:       'https://kalshi.com/markets/' + (m.ticker || '')
+    // mid = midpoint of bid/ask — closest to Kalshi's displayed price
+    mid: (m.yes_bid != null && m.yes_ask != null) ? Math.round((m.yes_bid + m.yes_ask) / 2) : null,
+    url: 'https://kalshi.com/markets/' + (m.ticker || '')
   };
 }
 
@@ -830,32 +838,42 @@ function renderPlayCards(plays) {
 
 function addPlayToPort(play) {
   if (!play || !play.market) return;
+  // Use the live Kalshi price if it was fetched, otherwise fall back to AI estimate
+  var liveEl = document.getElementById('liveprice-' + play.num);
+  var liveText = liveEl ? liveEl.textContent : '';
+  var liveMatch = liveText.match(/(\d+)/);
+  var livePrice = liveMatch ? parseInt(liveMatch[1]) : null;
+  var playEntry = livePrice || play.currentKalshiPrice || play.entryTarget || play.fairValue || 60;
+  var autoStop = Math.round(playEntry * 0.75); // default 25% stop-loss
   S.positions.push({
     name: play.market, dir: play.direction || 'YES',
-    entry: play.entryTarget || play.fairValue || 60,
-    curr:  play.entryTarget || play.fairValue || 60,
-    qty:   Math.round((play.size || 10) / ((play.entryTarget || 60) / 100)),
+    entry: playEntry, curr: playEntry,
+    qty:   Math.round((play.size || 10) / (playEntry / 100)),
     cat:   play.category || 'Other', expiry: play.expiry || '—',
-    thesis: play.reason || '', added: new Date().toLocaleDateString()
+    thesis: play.reason || '', stop: autoStop,
+    added: new Date().toLocaleDateString()
   });
   saveState(); renderPortfolio(); updateHero(); showToast('✅ Added to portfolio!');
 }
 
 // ═══ PORTFOLIO ═══
 function addPosition() {
+  var entryPrice = parseFloat(document.getElementById('pf-entry').value) || 60;
+  var stopVal = parseFloat(document.getElementById('pf-stop').value);
   S.positions.push({
     name:   document.getElementById('pf-name').value.trim() || 'My Trade',
     dir:    document.getElementById('pf-dir').value,
-    entry:  parseFloat(document.getElementById('pf-entry').value) || 60,
-    curr:   parseFloat(document.getElementById('pf-curr').value) || 60,
+    entry:  entryPrice,
+    curr:   parseFloat(document.getElementById('pf-curr').value) || entryPrice,
     qty:    parseInt(document.getElementById('pf-qty').value) || 10,
     cat:    document.getElementById('pf-cat').value,
     expiry: document.getElementById('pf-exp').value || '—',
     thesis: document.getElementById('pf-thesis').value || '',
+    stop:   isNaN(stopVal) ? null : stopVal,
     added:  new Date().toLocaleDateString()
   });
   saveState(); renderPortfolio(); updateHero();
-  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-thesis'].forEach(function(id) { document.getElementById(id).value = ''; });
+  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-stop','pf-thesis'].forEach(function(id) { document.getElementById(id).value = ''; });
   showToast('✅ Position saved!');
 }
 
@@ -884,9 +902,12 @@ async function refreshAllPrices() {
     try {
       var market = await fetchKalshiMarket(pos.name);
       if (market) {
-        var newPrice = pos.dir === 'YES'
-          ? (market.yesAsk != null ? market.yesAsk : market.lastPrice)
-          : (market.noAsk  != null ? market.noAsk  : market.lastPrice);
+        // Priority: last_price → mid (bid+ask/2) → ask
+        // last_price matches what Kalshi shows; mid is next best
+        var newPrice = market.lastPrice != null ? market.lastPrice
+          : market.mid != null ? market.mid
+          : pos.dir === 'YES' ? market.yesAsk
+          : market.noAsk;
         if (newPrice != null) {
           S.positions[i].curr = newPrice;
           updated++;
@@ -900,8 +921,31 @@ async function refreshAllPrices() {
   saveState();
   renderPortfolio();
   updateHero();
+
+  // Check stop-losses
+  var stopped = S.positions.filter(function(p) {
+    return p.stop != null && p.curr <= p.stop;
+  });
+  if (stopped.length) {
+    stopped.forEach(function(p) {
+      showToast('🚨 STOP-LOSS HIT: ' + p.name.slice(0,30) + ' (' + p.curr + '¢ ≤ ' + p.stop + '¢)', 'var(--red)');
+    });
+    // Flash portfolio tab red
+    var tab = document.querySelector('.tab[onclick*="portfolio"]');
+    if (tab) {
+      tab.style.borderColor = 'var(--red)';
+      tab.style.color = 'var(--red)';
+      tab.textContent = '💼 Portfolio 🚨';
+      setTimeout(function() {
+        tab.style.borderColor = '';
+        tab.style.color = '';
+        tab.textContent = '💼 Portfolio';
+      }, 10000);
+    }
+  }
+
   btn.disabled = false; btn.textContent = '🔄 Refresh Prices';
-  showToast('✅ Updated ' + updated + '/' + S.positions.length + ' prices!');
+  showToast('✅ Updated ' + updated + '/' + S.positions.length + ' prices!' + (stopped.length ? ' ⚠️ ' + stopped.length + ' stop-loss hit!' : ''));
 }
 
 function renderPortfolio() {
@@ -922,7 +966,11 @@ function renderPortfolio() {
     ti += cost; tp += pnl;
     html += '<div class="pos-row ' + (pnl>=0?'pos-up':'pos-down') + '">';
     html += '<div><div class="pos-name">' + p.name + ' <span style="font-size:0.72rem;color:' + (p.dir==='YES'?'var(--green)':'var(--red)') + ';">' + p.dir + '</span></div>';
-    html += '<div class="pos-meta">' + p.cat + ' · Entry: ' + p.entry + '¢ · ' + p.qty + ' contracts · Exp: ' + p.expiry + '</div></div>';
+    var stopLabel = p.stop != null ? ' · 🛑 Stop: ' + p.stop + '¢' : '';
+    var stopHit = p.stop != null && p.curr <= p.stop;
+    html += '<div class="pos-meta">' + p.cat + ' · Entry: ' + p.entry + '¢ · ' + p.qty + ' contracts · Exp: ' + p.expiry + stopLabel + '</div>';
+    if (stopHit) html += '<div style="color:var(--red);font-size:0.72rem;font-weight:800;animation:pulse 1s infinite;">🚨 STOP-LOSS HIT — Consider exiting!</div>';
+    html += '</div>';
     html += '<div><div style="font-size:0.72rem;font-weight:800;color:var(--mid);margin-bottom:2px;">Current (¢)</div>';
     html += '<input class="pos-curr-input" type="number" value="' + p.curr + '" onchange="updateCurr(' + i + ',this.value)"></div>';
     html += '<div class="pos-pnl" style="color:' + (pnl>=0?'var(--green)':'var(--red)') + ';">' + (pnl>=0?'+':'') + '$' + pnl.toFixed(2) + '</div>';
