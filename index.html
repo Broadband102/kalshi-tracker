@@ -567,596 +567,66 @@ function updateHero(){
 
 
 // ═══ KALSHI LIVE PRICE FETCHER ═══
-async function fetchKalshiMarket(searchTerm, category='') {
+// ── Market cache: fetch once, reuse for all 10 plays ──
+let _marketCache = null;
+let _marketCacheTime = 0;
+
+async function getAllMarkets() {
   const proxyUrl = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
-  if (!proxyUrl) return null;
-
-  // Sports keywords to filter OUT as backup
-  const sportsKeywords = ['nba','nfl','mlb','nhl','ncaa','wins by','points','rebounds',
-    'assists','touchdowns','yards','innings','goals','score','game','match','series',
-    'playoff','championship','tournament','athlete','player','team','sport',
-    'detroit','sabres','flames','lightning','mammoth','lakers','celtics','heat'];
-
+  if (!proxyUrl) return [];
+  if (_marketCache && (Date.now() - _marketCacheTime) < 300000) {
+    return _marketCache;
+  }
   try {
     const base = proxyUrl.replace(/\/$/, '');
-
-    // Map category to Kalshi category param
-    const catMap = {
-      'Economic': 'Economic', 'economy': 'Economic',
-      'Political': 'Political', 'politics': 'Political',
-      'Climate': 'Climate', 'weather': 'Climate',
-      'Healthcare': 'Healthcare', 'Geopolitical': 'Political',
-    };
-    const kalshiCat = catMap[category] || '';
-
-    // Build search URL with category filter
-    const catParam = kalshiCat ? `&category=${encodeURIComponent(kalshiCat)}` : '';
-    const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(searchTerm)}${catParam}`);
+    const r = await fetch(`${base}/kalshi-all`);
     const d = await r.json();
-    const markets = d.markets || d.data || [];
-    console.log('Kalshi search "' + searchTerm + '" [cat:' + (kalshiCat||'any') + ']: ' + markets.length + ' results',
-      markets.map(m=>(m.title||m.question||m.ticker||'?').slice(0,40)));
-
-    // Filter out sports as backup
-    const filtered = markets.filter(m => {
-      const title = (m.title || m.question || '').toLowerCase();
-      return !sportsKeywords.some(kw => title.includes(kw));
-    });
-
-    const m = filtered.length ? filtered[0] : null;
-    if (!m) { console.warn('No match for:', searchTerm, '| raw count:', markets.length); return null; }
-
-    return {
-      ticker:    m.ticker || '',
-      title:     m.title  || m.question || '',
-      yesBid:    m.yes_bid    != null ? m.yes_bid    : null,
-      yesAsk:    m.yes_ask    != null ? m.yes_ask    : null,
-      noBid:     m.no_bid     != null ? m.no_bid     : null,
-      noAsk:     m.no_ask     != null ? m.no_ask     : null,
-      lastPrice: m.last_price != null ? m.last_price : null,
-      closeTime: m.close_time || m.expiration_time || '',
-      url:       `https://kalshi.com/markets/${m.ticker || ''}`,
-    };
+    _marketCache = d.markets || [];
+    _marketCacheTime = Date.now();
+    console.log('Fetched ' + _marketCache.length + ' non-sports markets from Kalshi');
+    return _marketCache;
   } catch(e) {
-    console.warn('Kalshi fetch error:', e.message);
-    return null;
+    console.warn('getAllMarkets failed:', e.message);
+    return [];
   }
 }
 
-// ═══ CLAUDE API ═══
-async function callClaude(prompt, useWebSearch=true, maxTok=700){
-  const proxyUrl = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
-  if(!proxyUrl) throw new Error('NO_PROXY');
-
-  const tools = useWebSearch ? [{type:'web_search_20250305',name:'web_search'}] : [];
-  let messages = [{role:'user',content:prompt}];
-
-  for(let turn=0; turn<6; turn++){
-    const body = {model:'claude-sonnet-4-20250514', max_tokens:maxTok, messages};
-    if(tools.length) body.tools=tools;
-
-    let r;
-    try {
-      r = await fetch(proxyUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-    } catch(e) {
-      throw new Error('FETCH_FAIL:'+e.message);
-    }
-
-    let raw, d;
-    try { raw=await r.text(); d=JSON.parse(raw); }
-    catch(e){ throw new Error('BAD_JSON (HTTP '+r.status+'): '+raw.slice(0,200)); }
-
-    if(d.error) throw new Error('API_ERR: '+(d.error.message||JSON.stringify(d.error)));
-    if(!d.content||!Array.isArray(d.content)) throw new Error('NO_CONTENT: '+JSON.stringify(d).slice(0,150));
-
-    const textBlocks=d.content.filter(b=>b.type==='text');
-    const toolBlocks=d.content.filter(b=>b.type==='tool_use');
-
-    if(toolBlocks.length===0||d.stop_reason==='end_turn'){
-      return textBlocks.map(b=>b.text).join('\n').trim();
-    }
-    messages.push({role:'assistant',content:d.content});
-    messages.push({role:'user',content:toolBlocks.map(tu=>({type:'tool_result',tool_use_id:tu.id,content:[]}))});
+function scoreMatch(market, searchTerm) {
+  const title = (market.title || market.question || '').toLowerCase();
+  const words = searchTerm.toLowerCase().split(' ').filter(w => w.length > 2);
+  let score = 0;
+  for (const word of words) {
+    if (title.includes(word)) score += word.length;
   }
-  throw new Error('Too many tool turns');
+  return score;
 }
 
-function safeJSON(text, fallback) {
-  if (!text) return fallback;
-  try {
-    // Strip markdown code fences
-    const c = text.replace(/```json|```/g, '').trim();
-    // Find outermost array
-    const s = c.indexOf('[');
-    const e = c.lastIndexOf(']');
-    if (s === -1 || e === -1) return fallback;
-    const jsonStr = c.slice(s, e + 1);
-    const parsed = JSON.parse(jsonStr);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch(err) {
-    // Try parsing as-is
-    try { const p = JSON.parse(text.trim()); return Array.isArray(p) ? p : fallback; }
-    catch(e2) { return fallback; }
-  }
+async function fetchKalshiMarket(searchTerm, category='') {
+  const markets = await getAllMarkets();
+  if (!markets.length) return null;
+
+  const scored = markets
+    .map(m => ({ m, score: scoreMatch(m, searchTerm) }))
+    .filter(x => x.score > 0)
+    .sort((a,b) => b.score - a.score);
+
+  console.log('Matches for "' + searchTerm + '":', scored.slice(0,2).map(x => (x.m.title||'').slice(0,50)));
+  const m = scored.length ? scored[0].m : null;
+  if (!m) { console.warn('No match for:', searchTerm); return null; }
+
+  return {
+    ticker:    m.ticker || '',
+    title:     m.title  || m.question || '',
+    yesBid:    m.yes_bid    != null ? m.yes_bid    : null,
+    yesAsk:    m.yes_ask    != null ? m.yes_ask    : null,
+    noBid:     m.no_bid     != null ? m.no_bid     : null,
+    noAsk:     m.no_ask     != null ? m.no_ask     : null,
+    lastPrice: m.last_price != null ? m.last_price : null,
+    closeTime: m.close_time || m.expiration_time || '',
+    url:       'https://kalshi.com/markets/' + (m.ticker || ''),
+  };
 }
 
-function showAiError(el, err){
-  const noProxy = err.message==='NO_PROXY' || err.message.includes('NO_PROXY');
-  const fetchFail = err.message.includes('FETCH_FAIL');
-  if(noProxy){
-    el.innerHTML = `<div style="color:var(--yellow);font-weight:800;font-size:0.9rem;margin-bottom:10px;">⚙️ Proxy not set up yet!</div>
-<div style="font-size:0.82rem;color:var(--mid);line-height:1.9;">
-1. Tap the <strong style="color:var(--yellow);">⚙️ Setup</strong> tab<br>
-2. Paste your Cloudflare Worker URL<br>
-3. Click 💾 Save Proxy URL<br>
-4. Click 🧪 Test Connection<br>
-5. Come back and try again!
-</div>`;
-  } else if(fetchFail){
-    el.innerHTML = `<div style="color:var(--red);font-weight:800;margin-bottom:8px;">❌ Can't reach proxy</div>
-<div style="font-size:0.82rem;color:var(--mid);line-height:1.8;">Saved URL: <strong>${localStorage.getItem('kft-proxy')||'none'}</strong><br>
-Check the URL is correct in ⚙️ Setup tab and your Worker is deployed in Cloudflare.<br><br>
-Error: ${err.message}</div>`;
-  } else {
-    el.innerHTML = `<div style="color:var(--red);font-weight:800;margin-bottom:8px;">❌ ${err.message}</div>
-<div style="font-size:0.82rem;color:var(--mid);line-height:1.8;">Proxy URL: <strong>${localStorage.getItem('kft-proxy')||'NOT SET'}</strong><br>
-Try the 🧪 Test Connection button in ⚙️ Setup to diagnose.</div>`;
-  }
-}
-
-
-
-// ═══ AFTERNOON REFRESH ═══
-async function runAfternoonRefresh() {
-  if (!S.positions.length) { alert('Add some morning positions first, then run Afternoon Refresh!'); return; }
-  const btn = document.getElementById('btn-afternoon');
-  btn.disabled = true; btn.textContent = '⏳ Refreshing...';
-
-  const out = document.getElementById('brief-out');
-  out.className = 'ai-box loading';
-  out.innerHTML = '<div class="spinner"></div> Running afternoon check on your positions + new opportunities...';
-
-  const today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const posText = S.positions.map(p => {
-    const cost=(p.entry/100)*p.qty, cv=(p.curr/100)*p.qty, pnl=cv-cost;
-    return `${p.name} (${p.dir}) entry ${p.entry}¢ now ${p.curr}¢ P&L:${pnl>=0?'+':''}$${pnl.toFixed(2)}`;
-  }).join(' | ');
-
-  const numPlays = S.plays || 10;
-  const scaling = getOptimalPlays(S.bank);
-  const t1size = (S.bank * scaling.pctPerPlay/100 * 1.2).toFixed(0);
-  const t2size = (S.bank * scaling.pctPerPlay/100).toFixed(0);
-  const t3size = (S.bank * scaling.pctPerPlay/100 * 0.6).toFixed(0);
-  const t1end = Math.ceil(numPlays * 0.4);
-  const t2end = Math.ceil(numPlays * 0.8);
-
-  const playsPrompt = `Today is ${today}. Generate exactly ${numPlays} Kalshi prediction market plays.
-Bankroll: $${S.bank}. Context: ${briefText.slice(0,250)}
-
-Search today's news for market-moving events. For each play provide a SPECIFIC 2-4 word Kalshi search term that will find the exact open contract.
-
-You MUST return exactly ${numPlays} items. Search across: Fed rates, CPI, jobs, Senate races, House votes, state elections, crypto, oil, weather events, GDP.
-
-Return ONLY raw JSON array, zero text outside it:
-[{"num":1,"market":"Short descriptive name","kalshiSearch":"fed march rate cut","category":"Economic","direction":"YES","fairValue":64,"tier":1,"size":${t1size},"reason":"one sentence why based on today news","risk":"LOW","expiry":"Mar 17","confidence":78}]
-
-- fairValue = what YOU think the true probability is (not the market price)
-- kalshiSearch = 2-4 words someone would type to find this on Kalshi
-- Fill all ${numPlays} slots across: plays 1-${t1end} Tier1 economic $${t1size} | plays ${t1end+1}-${t2end} Tier2 political $${t2size} | plays ${t2end+1}-${numPlays} Tier3 wildcard $${t3size}`;
-
-  try {
-    const playsRaw = await callClaude(playsPrompt, true, 900);
-    const plays = safeJSON(playsRaw, []);
-
-    if (plays.length) {
-      S.lastPlays = plays;
-      saveState();
-      renderPlayCards(plays);
-      setStep(2, 'done', 'Step 2: ' + plays.length + ' plays generated! ✓');
-
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
-      document.getElementById('panel-plays').classList.add('on');
-      document.querySelectorAll('.tab').forEach(t => {
-        if (t.textContent.includes('10 Plays')) t.classList.add('on');
-      });
-
-      setStep(3, 'active', 'Step 3: Loading live Kalshi prices...');
-      await loadAllPrices(plays);
-      setStep(3, 'done', 'Step 3: Live prices loaded! ✓');
-
-    } else {
-      setStep(2, 'err', 'Step 2: Try "Generate 10 Plays" button separately — brief is saved!');
-    }
-
-    saveState();
-    showToast('☀️ Morning Routine complete!');
-
-  } catch(e) {
-    setStep(1, 'err', 'Error: ' + e.message);
-    const briefOut = document.getElementById('brief-out');
-    briefOut.className = 'ai-box';
-    showAiError(briefOut, e);
-  }
-
-  btn.disabled = false;
-  btn.textContent = '☀️ Run Morning Routine';
-}
-
-// ═══ DAILY BRIEF ═══
-async function runBrief(){
-  const btn=document.getElementById('btn-brief');
-  btn.disabled=true; btn.textContent='⏳ Thinking...';
-  const out=document.getElementById('brief-out');
-  out.className='ai-box loading';
-  out.innerHTML='<div class="spinner"></div> Scanning news + Kalshi markets... (~20-30 sec)';
-
-  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const portCtx=S.positions.length?'\nHolding: '+S.positions.map(p=>`${p.name} (${p.dir}) at ${p.entry}¢, now ${p.curr}¢`).join('; '):'\nNo positions.';
-  const prompt=`Today is ${today}. Kalshi prediction market analyst. Trader has $${S.bank}, targeting 3%/day.${portCtx}
-
-Search today's news (economic data, Fed, politics, weather). Search Kalshi.com for open markets.
-
-Write a DAILY BRIEF (max 300 words, use emojis):
-1. 📰 Top 3 News Signals
-2. 🎯 Top 4 Kalshi Opportunities (market name, YES/NO, why, confidence)
-3. 💼 Positions check (if any)
-4. 🌡️ Vibe: Hot/Warm/Slow`;
-
-  try {
-    const text=await callClaude(prompt,true,600);
-    out.className='ai-box'; out.textContent=text;
-    S.lastBrief=text; S.briefTs=new Date().toLocaleString();
-    document.getElementById('brief-ts').textContent='🕐 Generated: '+S.briefTs;
-    saveState(); showToast('✅ Brief ready!');
-  } catch(e){
-    out.className='ai-box'; showAiError(out,e);
-  }
-  btn.disabled=false; btn.textContent='⚡ Generate Today\'s Brief';
-}
-
-async function loadMarkets(){
-  const btn=document.getElementById('btn-markets'); btn.disabled=true; btn.textContent='⏳ Scanning...';
-  try {
-    const text=await callClaude(`Search Kalshi.com for currently open prediction markets today ${new Date().toLocaleDateString()}. List 20 specific open markets. Return ONLY a JSON array: [{"title":"...","category":"..."}]. No markdown.`,true);
-    const markets=safeJSON(text,[]);
-    document.getElementById('markets-card').style.display='block';
-    document.getElementById('mkt-count').textContent='— '+markets.length+' found';
-    document.getElementById('mkt-list').innerHTML=markets.map(m=>`<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;gap:10px;"><span style="color:var(--blue);min-width:100px;font-size:0.72rem;">${m.category||''}</span><span>${m.title||''}</span></div>`).join('');
-  } catch(e){
-    document.getElementById('markets-card').style.display='block';
-    document.getElementById('mkt-list').innerHTML='<div style="color:var(--mid);">Markets will be sourced in Daily Brief. Error: '+e.message+'</div>';
-  }
-  btn.disabled=false; btn.textContent='🔍 Scan Kalshi Markets';
-}
-
-// ═══ 10 PLAYS ═══
-async function generatePlays(){
-  const btn=document.getElementById('btn-plays'); btn.disabled=true; btn.textContent='⏳ Building plays...';
-  document.getElementById('plays-out').innerHTML='<div style="text-align:center;padding:50px;color:var(--mid);font-size:0.9rem;font-weight:700;"><div class="spinner" style="margin:0 auto 14px;width:32px;height:32px;border-width:4px;"></div>Building your 10-play sheet...</div>';
-
-  const today=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const brief=S.lastBrief?S.lastBrief.slice(0,600):'No brief yet.';
-  const t1=(S.bank*0.12).toFixed(0), t2=(S.bank*0.10).toFixed(0), t3=(S.bank*0.06).toFixed(0);
-
-  const numPlays = S.plays || 10;
-  const prompt=`Today is ${today}. Generate a ${numPlays}-play Kalshi prediction market sheet. Bankroll: $${S.bank}.
-Brief context: ${brief.slice(0,200)}
-
-Search Kalshi.com for open markets. Search today's news for mispricings.
-
-YOU MUST RETURN EXACTLY ${numPlays} JSON OBJECTS. Do not stop early.
-Return ONLY the raw JSON array, absolutely nothing before or after it:
-
-[{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Mar 17"},
-{"num":2,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"NO","fairValue":70,"entryTarget":58,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Apr 2"},
-{"num":3,...},{"num":4,...},{"num":5,...},{"num":6,...},{"num":7,...},{"num":8,...},{"num":9,...},{"num":10,...}]
-
-Tier 1 (num 1-4): $${t1} — Fed/CPI/jobs/economic (HIGH confidence)
-Tier 2 (num 5-8): $${t2} — Senate/House/state politics (MEDIUM confidence)
-Tier 3 (num 9-10): $${t3} — geopolitical/wildcard (SPECULATIVE)
-
-fairValue = your honest probability estimate
-kalshiSearch = exact words to search on kalshi.com to find this contract
-You MUST include all ${numPlays} items numbered 1 through ${numPlays}.`;
-
-  try {
-    const raw=await callClaude(prompt,true,1200);
-    const plays=safeJSON(raw,[]);
-    if(plays.length){ S.lastPlays=plays; saveState(); renderPlayCards(plays); setTimeout(()=>loadAllPrices(plays), 500); }
-    else { document.getElementById('plays-out').innerHTML='<div class="card"><div style="font-size:0.85rem;color:var(--mid);white-space:pre-wrap;">'+raw+'</div></div>'; }
-  } catch(e){
-    const el=document.createElement('div'); el.style.padding='20px';
-    showAiError(el,e); document.getElementById('plays-out').innerHTML=''; document.getElementById('plays-out').appendChild(el);
-  }
-  btn.disabled=false; btn.textContent='⚡ Generate 10 Plays';
-}
-
-function renderPlayCards(plays){
-  const tc={1:'tier1',2:'tier2',3:'tier3'};
-  const tb={1:'pb-t1',2:'pb-t2',3:'pb-t3'};
-  const tl={1:'🟢 Tier 1',2:'🔵 Tier 2',3:'🟠 Tier 3'};
-  const tf={1:'var(--green)',2:'var(--blue)',3:'var(--orange)'};
-
-  document.getElementById('plays-out').innerHTML='<div class="plays-grid">'+plays.map(p=>{
-    const dir=(p.direction||'YES').toUpperCase();
-    const conf=Math.min(100,Math.max(0,p.confidence||50));
-    const pd=JSON.stringify(p).replace(/"/g,'&quot;');
-
-    return `<div class="play-card ${tc[p.tier]||'tier2'}" id="pcard-${p.num}">
-      <div class="play-num">${p.num||''}</div>
-      <span class="play-badge ${tb[p.tier]||'pb-t2'}">${tl[p.tier]||'Tier 2'}</span>
-      <div class="play-title">${p.market||'Market'}</div>
-      <div class="play-cat">${p.category||''} · Expires ~${p.expiry||'?'}</div>
-
-      <!-- LIVE PRICE BOX — populated by loadLivePrice() -->
-      <div id="price-${p.num}" style="background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <div>
-            <div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">Live Kalshi Price</div>
-            <div id="liveprice-${p.num}" style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--dim);">⏳ Loading...</div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">AI Fair Value</div>
-            <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--yellow);">${p.fairValue||p.entryTarget||'?'}¢</div>
-          </div>
-        </div>
-        <div id="edge-${p.num}" style="font-size:0.78rem;font-weight:800;color:var(--dim);">Calculating edge from live price...</div>
-        <div style="display:flex;gap:6px;margin-top:8px;">
-          <button onclick="loadLivePrice(${p.num},'${(p.kalshiSearch||p.market||'').replace(/'/g,"\'").slice(0,40)}')"
-            style="flex:1;background:rgba(96,165,250,0.2);border:2px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;cursor:pointer;"
-            id="pricebtn-${p.num}">🔄 Refresh Price</button>
-          <a id="buylink-${p.num}" href="https://kalshi.com/markets?search=${encodeURIComponent(p.kalshiSearch||p.market||'')}" target="_blank"
-            style="flex:1;text-align:center;background:rgba(74,222,128,0.2);border:2px solid var(--green);color:var(--green);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;text-decoration:none;">
-            🛒 Buy on Kalshi
-          </a>
-        </div>
-      </div>
-
-      <div class="play-pills">
-        <span class="pill ${dir==='YES'?'pill-yes':'pill-no'}">${dir}</span>
-        <span class="pill pill-size">$${p.size||'?'}</span>
-        <span class="pill" style="background:rgba(167,139,250,0.15);color:var(--purple);border:2px solid var(--purple);">🎯 ${conf}% conf</span>
-        <span class="pill" style="background:rgba(255,255,255,0.05);color:var(--dim);border:2px solid var(--border);">⚠️ ${p.risk||'MED'}</span>
-      </div>
-
-      <div class="conf-bar"><div class="conf-fill" style="width:${conf}%;background:${tf[p.tier]||'var(--blue)'}"></div></div>
-      <div class="play-reason">${p.reason||''}</div>
-      <div class="play-btns">
-        <button class="pbtn pbtn-add" onclick='addPlayToPort(${pd})'>➕ Add to Portfolio</button>
-        <button class="pbtn pbtn-skip" onclick="this.closest('.play-card').style.opacity='0.35';this.textContent='⏭ Skipped'">Skip</button>
-      </div>
-    </div>`;
-  }).join('')+'</div>';
-}
-
-function addPlayToPort(play){
-  S.positions.push({name:play.market,dir:play.direction||'YES',entry:play.entryTarget||60,curr:play.entryTarget||60,qty:Math.round((play.size||10)/((play.entryTarget||60)/100)),cat:play.category||'Other',expiry:play.expiry||'—',thesis:play.reason||'',added:new Date().toLocaleDateString()});
-  saveState(); renderPortfolio(); updateHero(); showToast('✅ Added to portfolio!');
-}
-
-// ═══ PORTFOLIO ═══
-function addPosition(){
-  S.positions.push({name:document.getElementById('pf-name').value.trim()||'My Trade',dir:document.getElementById('pf-dir').value,entry:parseFloat(document.getElementById('pf-entry').value)||60,curr:parseFloat(document.getElementById('pf-curr').value)||60,qty:parseInt(document.getElementById('pf-qty').value)||10,cat:document.getElementById('pf-cat').value,expiry:document.getElementById('pf-exp').value||'—',thesis:document.getElementById('pf-thesis').value||'',added:new Date().toLocaleDateString()});
-  saveState(); renderPortfolio(); updateHero();
-  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-thesis'].forEach(id=>document.getElementById(id).value='');
-  showToast('✅ Position saved!');
-}
-function updateCurr(i,val){ S.positions[i].curr=parseFloat(val)||S.positions[i].curr; saveState(); renderPortfolio(); updateHero(); }
-function closePos(i){ if(!confirm('Close "'+S.positions[i].name+'"?'))return; S.positions.splice(i,1); saveState(); renderPortfolio(); updateHero(); showToast('📤 Closed!'); }
-
-function renderPortfolio(){
-  const el=document.getElementById('pos-list');
-  if(!S.positions.length){ el.innerHTML='<div style="text-align:center;padding:30px;color:var(--dim);font-size:0.9rem;font-weight:700;">🌱 No positions yet!</div>'; document.getElementById('pt-invested').textContent='$0'; document.getElementById('pt-pnl').textContent='$0.00'; document.getElementById('pt-ret').textContent='—'; document.getElementById('pt-count').textContent='0/10'; return; }
-  let ti=0,tp=0;
-  el.innerHTML=S.positions.map((p,i)=>{
-    const cost=(p.entry/100)*p.qty, cv=(p.curr/100)*p.qty, pnl=cv-cost, ret=cost>0?((pnl/cost)*100).toFixed(1):'0.0';
-    ti+=cost; tp+=pnl;
-    return `<div class="pos-row ${pnl>=0?'pos-up':'pos-down'}">
-      <div><div class="pos-name">${p.name} <span style="font-size:0.72rem;color:${p.dir==='YES'?'var(--green)':'var(--red)'};">${p.dir}</span></div><div class="pos-meta">${p.cat} · Entry: ${p.entry}¢ · ${p.qty} contracts · Exp: ${p.expiry}</div></div>
-      <div><div style="font-size:0.72rem;font-weight:800;color:var(--mid);margin-bottom:2px;">Current (¢)</div><input class="pos-curr-input" type="number" value="${p.curr}" onchange="updateCurr(${i},this.value)"></div>
-      <div class="pos-pnl" style="color:${pnl>=0?'var(--green)':'var(--red)'};">${pnl>=0?'+':''}$${pnl.toFixed(2)}</div>
-      <div style="font-weight:800;font-size:0.85rem;color:${pnl>=0?'var(--green)':'var(--red)'};">${ret>=0?'+':''}${ret}%</div>
-      <button class="pos-close-btn" onclick="closePos(${i})">✕</button>
-    </div>`;
-  }).join('');
-  const ar=ti>0?((tp/ti)*100).toFixed(1):'0.0';
-  const pe=document.getElementById('pt-pnl'); pe.textContent=(tp>=0?'+':'')+'$'+tp.toFixed(2); pe.style.color=tp>=0?'var(--green)':'var(--red)';
-  document.getElementById('pt-invested').textContent='$'+ti.toFixed(2);
-  document.getElementById('pt-ret').textContent=(ar>=0?'+':'')+ar+'%';
-  document.getElementById('pt-count').textContent=S.positions.length+'/10';
-}
-
-async function analyzePortfolio(){
-  if(!S.positions.length){alert('Add positions first!');return;}
-  const btn=document.getElementById('btn-analyze'); btn.disabled=true; btn.textContent='⏳ Analyzing...';
-  document.getElementById('analysis-card').style.display='block';
-  const out=document.getElementById('analysis-out');
-  out.className='ai-box loading'; out.innerHTML='<div class="spinner"></div> Checking your positions against today\'s news...';
-  const posText=S.positions.map(p=>`• ${p.name} (${p.dir}) entry ${p.entry}¢ now ${p.curr}¢, ${p.qty} contracts, exp ${p.expiry}`).join('\n');
-  try {
-    const text=await callClaude(`Today is ${new Date().toLocaleDateString()}. Quick portfolio check:\n${posText}\nSearch today's news for anything affecting these. For each: ✅ HOLD, 🔄 WATCH, or 🔴 SELL + one sentence why. Then one overall tip. Fun, casual, emojis, under 300 words!`,true);
-    out.className='ai-box'; out.textContent=text;
-  } catch(e){ out.className='ai-box'; showAiError(out,e); }
-  btn.disabled=false; btn.textContent='🤖 AI Analyze All';
-}
-
-// ═══ EXPORT ═══
-function exportCSV(){
-  const rows=[['Market','Dir','Entry¢','Current¢','Contracts','Cost$','P&L$','Return%','Category','Expiry','Thesis','Added'],...S.positions.map(p=>{const c=(p.entry/100)*p.qty,v=(p.curr/100)*p.qty,pnl=v-c,ret=c>0?((pnl/c)*100).toFixed(1):'0';return[p.name,p.dir,p.entry,p.curr,p.qty,c.toFixed(2),pnl.toFixed(2),ret,p.cat,p.expiry,p.thesis,p.added];})];
-  rows.push([],['Bankroll','$'+S.bank],['Tax Rate',S.tax+'%'],['Day',S.day],['Exported',new Date().toLocaleString()]);
-  download('kalshi-'+new Date().toISOString().slice(0,10)+'.csv',rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'),'text/csv');
-  showToast('📥 CSV downloaded!');
-}
-function exportJSON(){ download('kalshi-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify({...S,exportedAt:new Date().toISOString()},null,2),'application/json'); showToast('📦 Backup downloaded!'); }
-function download(name,content,type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
-
-// ═══ PROJECTOR ═══
-function setRate(r){ document.getElementById('pj-rate').value=r; drawProj(); }
-function drawProj(){
-  const start=parseFloat(document.getElementById('pj-start').value)||100;
-  const rate=parseFloat(document.getElementById('pj-rate').value)/100;
-  const days=parseInt(document.getElementById('pj-days').value)||42;
-  const tax=parseFloat(document.getElementById('pj-tax').value)/100;
-  const vals=[start]; for(let i=1;i<=days;i++) vals.push(+(vals[i-1]*(1+rate)).toFixed(2));
-  const net=vals.map(v=>start+(v-start)*(1-tax));
-  const tgt=start+start/(1-tax), maxV=Math.max(...vals,tgt);
-  const W=400,H=200,px=30,py=20;
-  const toX=i=>px+(i/days)*(W-px*2), toY=v=>H-py-((v-start)/(maxV-start||1))*(H-py*2);
-  const gpts=vals.map((v,i)=>`${toX(i)},${toY(v)}`).join(' ');
-  const npts=net.map((v,i)=>`${toX(i)},${toY(v)}`).join(' ');
-  let dhn=-1; for(let i=0;i<=days;i++){ if(net[i]>=start*2&&dhn===-1) dhn=i; }
-  document.getElementById('proj-svg').innerHTML=`
-    <line x1="${px}" y1="${toY(tgt)}" x2="${W-px}" y2="${toY(tgt)}" stroke="var(--yellow)" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.7"/>
-    <text x="${W-px+3}" y="${toY(tgt)+4}" fill="var(--yellow)" font-size="9" font-family="Nunito">2× net</text>
-    <polyline points="${npts}" fill="none" stroke="var(--mid)" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.5"/>
-    <polyline points="${gpts}" fill="none" stroke="var(--green)" stroke-width="2.5"/>
-    <circle cx="${toX(0)}" cy="${toY(start)}" r="4" fill="var(--green)"/>
-    <circle cx="${toX(days)}" cy="${toY(vals[days])}" r="4" fill="var(--green)"/>
-    ${dhn>0?`<line x1="${toX(dhn)}" y1="${py}" x2="${toX(dhn)}" y2="${H-py}" stroke="var(--yellow)" stroke-width="1" stroke-dasharray="3,3"/><text x="${toX(dhn)}" y="${py-3}" fill="var(--yellow)" font-size="9" font-family="Nunito" text-anchor="middle">Day ${dhn} 🎉</text>`:''}
-    <text x="${toX(0)}" y="${H}" fill="var(--dim)" font-size="9" font-family="Nunito">D0</text>
-    <text x="${toX(days/2)}" y="${H}" fill="var(--dim)" font-size="9" font-family="Nunito" text-anchor="middle">D${Math.floor(days/2)}</text>
-    <text x="${toX(days)}" y="${H}" fill="var(--dim)" font-size="9" font-family="Nunito" text-anchor="end">D${days}</text>`;
-  document.getElementById('proj-summary').innerHTML=`
-    <div class="card" style="text-align:center;padding:12px;"><div style="font-family:'Fredoka One';font-size:1.5rem;color:var(--green);">$${vals[days].toFixed(0)}</div><div style="font-size:0.72rem;color:var(--mid);font-weight:700;">Gross Day ${days}</div></div>
-    <div class="card" style="text-align:center;padding:12px;"><div style="font-family:'Fredoka One';font-size:1.5rem;color:var(--yellow);">$${net[days].toFixed(0)}</div><div style="font-size:0.72rem;color:var(--mid);font-weight:700;">After Tax</div></div>
-    <div class="card" style="text-align:center;padding:12px;"><div style="font-family:'Fredoka One';font-size:1.5rem;color:var(--purple);">${dhn>0?'Day '+dhn:'>D'+days}</div><div style="font-size:0.72rem;color:var(--mid);font-weight:700;">2× After Tax 🎉</div></div>`;
-  let tbl=''; for(let i=1;i<=days;i++){const v=vals[i],n=net[i],is2x=n>=start*2; tbl+=`<div style="background:${is2x?'rgba(74,222,128,0.15)':'var(--card2)'};border:2px solid ${is2x?'var(--green)':'var(--border)'};border-radius:10px;padding:8px;text-align:center;"><div style="font-size:0.65rem;font-weight:800;color:var(--dim);">Day ${i}</div><div style="font-family:'Fredoka One';font-size:1rem;color:${is2x?'var(--green)':'var(--white)'};">$${v.toFixed(0)}</div><div style="font-size:0.6rem;color:var(--dim);">~$${n.toFixed(0)}</div>${is2x?'<div style="font-size:0.65rem;color:var(--green)">🎉 2×!</div>':''}</div>`;}
-  document.getElementById('proj-table').innerHTML=tbl;
-}
-
-// ═══ SETUP / PROXY ═══
-function saveProxy(){
-  const url=(document.getElementById('proxy-input').value||'').trim();
-  if(!url||!url.startsWith('http')){ showToast('⚠️ Enter a valid https:// URL','var(--yellow)'); return; }
-  localStorage.setItem('kft-proxy',url); window.KALSHI_PROXY=url;
-  updateSetupStatus(); showToast('✅ Proxy URL saved!');
-}
-
-async function testProxy(){
-  const url=(document.getElementById('proxy-input').value||'').trim()||localStorage.getItem('kft-proxy')||'';
-  const res=document.getElementById('proxy-result');
-  if(!url){ res.textContent='⚠️ Enter your Worker URL first.'; res.style.color='var(--yellow)'; return; }
-  res.innerHTML='⏳ Testing Claude API...'; res.style.color='var(--mid)';
-
-  let claudeOk = false;
-  try {
-    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:20,messages:[{role:'user',content:'Reply OK'}]})});
-    const d=JSON.parse(await r.text());
-    claudeOk = !!(d.content&&d.content.length);
-  } catch(e){ claudeOk=false; }
-
-  // Now test Kalshi endpoint
-  res.innerHTML=(claudeOk?'✅':'❌')+' Claude API &nbsp;|&nbsp; ⏳ Testing Kalshi...'; 
-  
-  let kalshiResult = '';
-  try {
-    const base = url.replace(/\/$/, '');
-    const kr = await fetch(`${base}/kalshi?search=fed+rate&limit=5`);
-    const kd = await kr.json();
-    const markets = kd.markets || [];
-    const count = markets.length;
-    
-    if (count > 0) {
-      const sample = markets.slice(0,3).map(m => (m.title||m.question||m.ticker||'unknown').slice(0,40)).join('<br>• ');
-      const hasPrice = markets[0].yes_ask != null || markets[0].last_price != null;
-      kalshiResult = `✅ Kalshi API working! Found ${count} markets for "fed rate":<br>
-        <div style="margin:6px 0 0 8px;font-size:0.75rem;color:var(--mid);">• ${sample}</div>
-        <div style="margin-top:4px;font-size:0.75rem;color:${hasPrice?'var(--green)':'var(--yellow)'};">
-          ${hasPrice ? '✅ Live prices available!' : '⚠️ No price data in response — Kalshi may require auth for prices'}
-        </div>`;
-    } else {
-      kalshiResult = `⚠️ Kalshi API reached but returned 0 markets.<br>
-        <div style="font-size:0.75rem;color:var(--mid);margin-top:4px;">Raw: ${JSON.stringify(kd).slice(0,200)}</div>`;
-    }
-  } catch(e) {
-    kalshiResult = `❌ Kalshi API failed: ${e.message}<br>
-      <div style="font-size:0.75rem;color:var(--mid);margin-top:4px;">The /kalshi endpoint on your Worker may need redeployment.</div>`;
-  }
-
-  res.innerHTML = `
-    <div style="margin-bottom:8px;">${claudeOk ? '✅ <strong>Claude API: Working!</strong>' : '❌ <strong>Claude API: Failed</strong>'}</div>
-    <div>${kalshiResult}</div>
-    ${claudeOk ? '<div style="margin-top:8px;color:var(--green);font-weight:800;">Ready to trade! 🚀</div>' : ''}
-  `;
-  res.style.color = claudeOk ? 'var(--green)' : 'var(--red)';
-}
-
-// ── TEST KALSHI SEARCH (standalone debug tool) ──
-async function testKalshiSearch() {
-  const url = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
-  const term = prompt('Enter search term to test (e.g. "fed rate"):','fed rate');
-  if (!term || !url) return;
-
-  const base = url.replace(/\/$/, '');
-  try {
-    const r = await fetch(`${base}/kalshi?search=${encodeURIComponent(term)}&limit=10`);
-    const d = await r.json();
-    const markets = d.markets || [];
-    
-    let msg = `Search: "${term}"
-Found: ${markets.length} markets
-
-`;
-    markets.forEach((m,i) => {
-      msg += `${i+1}. ${(m.title||m.question||'?').slice(0,60)}
-`;
-      msg += `   Ticker: ${m.ticker||'?'}
-`;
-      msg += `   YES ask: ${m.yes_ask!=null?m.yes_ask+'¢':'N/A'} | Last: ${m.last_price!=null?m.last_price+'¢':'N/A'}
-
-`;
-    });
-    alert(msg);
-  } catch(e) {
-    alert('Error: ' + e.message);
-  }
-}
-
-function updateSetupStatus(){
-  const url=localStorage.getItem('kft-proxy')||'';
-  const el=document.getElementById('setup-status'); if(!el) return;
-  if(url){
-    el.innerHTML='🟢 Proxy saved: <strong style="color:var(--green);">'+url+'</strong><br>Click 🧪 Test Connection to verify it\'s working.';
-    if(document.getElementById('proxy-input')) document.getElementById('proxy-input').value=url;
-  } else {
-    el.innerHTML='🔴 No proxy configured yet — follow steps 1–5 above.';
-  }
-}
-
-function copyCode(){
-  const code=`export default {
-  async fetch(request, env) {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      }});
-    }
-    const requestBody = await request.clone().text();
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
-        'x-api-key': env.ANTHROPIC_API_KEY,
-      },
-      body: requestBody,
-    });
-    const data = await resp.text();
-    return new Response(data, { status: resp.status, headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-    }});
-  }
-};`;
-  navigator.clipboard.writeText(code).then(()=>showToast('📋 Copied!')).catch(()=>showToast('Select and copy manually'));
-}
-
-
-// ═══ LIVE PRICE LOADER ═══
 async function loadLivePrice(num, searchTerm, category='') {
   const btn     = document.getElementById('pricebtn-' + num);
   const display = document.getElementById('liveprice-' + num);
@@ -1244,9 +714,13 @@ async function loadLivePrice(num, searchTerm, category='') {
 
 // Auto-load prices for all play cards
 async function loadAllPrices(plays) {
+  // Pre-fetch and cache all markets in one shot before looping
+  console.log('Pre-fetching all Kalshi markets...');
+  await getAllMarkets();
+  // Now match each play locally — no extra API calls
   for (const p of plays) {
     await loadLivePrice(p.num, p.kalshiSearch || p.market || '', p.category || '');
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 100)); // tiny delay, just for UI smoothness
   }
 }
 
