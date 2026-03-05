@@ -595,8 +595,13 @@ async function loadLivePrice(num, searchTerm, category) {
       }
       var buyLink = document.getElementById('buylink-' + num);
       if (buyLink && market.ticker) {
-        // Use Kalshi search — guaranteed to find the contract
-        buyLink.href = 'https://kalshi.com/markets?search=' + encodeURIComponent(market.ticker);
+        // Kalshi URL: /markets/SERIES/SLUG/EVENT_TICKER
+        // e.g. KXCPI-26JUL-T0.3 -> /markets/kxcpi/cpi/kxcpi-26jul
+        var tkParts  = market.ticker.split('-');           // ['KXCPI','26JUL','T0.3']
+        var series   = tkParts[0].toLowerCase();           // 'kxcpi'
+        var slug     = series.replace(/^kx/, '');          // 'cpi'
+        var eventTk  = tkParts.slice(0,2).join('-').toLowerCase(); // 'kxcpi-26jul'
+        buyLink.href = 'https://kalshi.com/markets/' + series + '/' + slug + '/' + eventTk;
         buyLink.textContent = '🎯 ' + market.ticker;
         buyLink.title = market.title || market.ticker;
       }
