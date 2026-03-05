@@ -987,61 +987,20 @@ async function testProxy() {
 
 async function testKalshiSearch() {
   var url = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
-  var term = prompt('Search term to test:', 'fed rate');
-  if (!term || !url) return;
+  if (!url) { alert('No proxy URL set'); return; }
   try {
-    var base = url.replace(/\/$/, '');
+    var base = url.replace(/\/\$/, '');
     var r = await fetch(base + '/kalshi-all');
     var d = await r.json();
     var all = d.markets || [];
-    var words = term.toLowerCase().split(' ').filter(function(w) { return w.length > 2; });
-    var scored = all.map(function(m) {
-      var title = (m.title || m.question || '').toLowerCase();
-      var score = words.filter(function(w) { return title.indexOf(w) >= 0; }).length;
-      return {m: m, score: score};
-    }).filter(function(x) { return x.score > 0; }).sort(function(a,b) { return b.score - a.score; });
-    var msg = 'Search: "' + term + '"\nTotal clean markets: ' + all.length + '\nMatches: ' + scored.length + '\n\n';
-    scored.slice(0, 8).forEach(function(x, i) {
-      msg += (i+1) + '. [score:' + x.score + '] ' + (x.m.title || x.m.question || '?').slice(0, 60) + '\n';
-      msg += '   YES ask: ' + (x.m.yes_ask != null ? x.m.yes_ask + '¢' : 'N/A') + '\n\n';
+    var msg = 'ALL ' + all.length + ' CLEAN MARKETS:\n\n';
+    all.forEach(function(m, i) {
+      msg += (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '?') + '\n';
     });
-    alert(msg);
+    navigator.clipboard.writeText(msg).then(function() {
+      alert(msg.slice(0, 3000) + '\n\n--- FULL LIST COPIED TO CLIPBOARD ---');
+    }).catch(function() {
+      alert(msg.slice(0, 3000));
+    });
   } catch(e) { alert('Error: ' + e.message); }
 }
-
-function updateSetupStatus() {
-  var url = localStorage.getItem('kft-proxy') || '';
-  var el = document.getElementById('setup-status');
-  if (!el) return;
-  if (url) {
-    el.innerHTML = '🟢 Proxy saved: <strong style="color:var(--green);">' + url + '</strong><br>Click 🧪 Test Connection to verify.';
-    var inp = document.getElementById('proxy-input');
-    if (inp) inp.value = url;
-  } else {
-    el.innerHTML = '🔴 No proxy configured yet — follow steps 1–5 above.';
-  }
-}
-
-function copyCode() {
-  var code = 'export default {\n  async fetch(request, env) {\n    if (request.method === \'OPTIONS\') return new Response(null, {headers:{\'Access-Control-Allow-Origin\':\'*\',\'Access-Control-Allow-Methods\':\'POST,GET,OPTIONS\',\'Access-Control-Allow-Headers\':\'Content-Type\'}});\n    const corsHeaders = {\'Access-Control-Allow-Origin\':\'*\',\'Content-Type\':\'application/json\'};\n    const url = new URL(request.url);\n    if (url.pathname === \'/kalshi-all\') {\n      try {\n        const resp = await fetch(\'https://api.elections.kalshi.com/trade-api/v2/markets?limit=200&status=open\', {headers:{\'Accept\':\'application/json\',\'User-Agent\':\'Mozilla/5.0\'}});\n        if (!resp.ok) return new Response(JSON.stringify({markets:[],error:\'Kalshi \'+resp.status}),{status:200,headers:corsHeaders});\n        const data = await resp.json();\n        const all = data.markets || [];\n        const SPORTS = [\'lightning\',\'sabres\',\'flames\',\'mammoth\',\'lakers\',\'celtics\',\'heat\',\'bulls\',\'nets\',\'knicks\',\'warriors\',\'clippers\',\'nuggets\',\'suns\',\'mavs\',\'spurs\',\'rockets\',\'pelicans\',\'grizzlies\',\'jazz\',\'kings\',\'blazers\',\'thunder\',\'pacers\',\'bucks\',\'hawks\',\'hornets\',\'wizards\',\'magic\',\'pistons\',\'cavaliers\',\'raptors\',\'sixers\',\'patriots\',\'chiefs\',\'eagles\',\'cowboys\',\'bills\',\'ravens\',\'bengals\',\'browns\',\'steelers\',\'texans\',\'colts\',\'titans\',\'jaguars\',\'broncos\',\'raiders\',\'chargers\',\'seahawks\',\'rams\',\'falcons\',\'panthers\',\'saints\',\'buccaneers\',\'vikings\',\'bears\',\'lions\',\'packers\',\'yankees\',\'dodgers\',\'astros\',\'cubs\',\'braves\',\'mets\',\'phillies\',\'padres\',\'wins by over\',\'points scored\',\'goals scored\',\'rebounds\',\'touchdowns\',\'over 4.5\',\'over 5.5\',\'over 6.5\',\'over 7.5\',\'over 8.5\',\'over 9.5\',\'over 10.5\',\'over 19.5\',\'over 22.5\',\'nba game\',\'nfl game\',\'mlb game\',\'nhl game\',\'ufc\',\'super bowl\',\'stanley cup\',\'nba finals\',\'lopez\',\'okongwu\',\'kuzma\',\'tatum\',\'embiid\',\'curry\',\'durant\',\'giannis\',\'jokic\',\'lillard\',\'wembanyama\',\'mccollum\',\'mahomes\',\'kelce\'];\n        const isSports = t => { const s=\' \'+t.toLowerCase()+\' \'; return SPORTS.some(k=>s.includes(k)); };\n        const clean = all.filter(m=>!isSports(m.title||m.question||\'\'));\n        return new Response(JSON.stringify({markets:clean,count:clean.length,total:all.length,filtered:all.length-clean.length}),{status:200,headers:corsHeaders});\n      } catch(e) { return new Response(JSON.stringify({markets:[],error:e.message}),{status:200,headers:corsHeaders}); }\n    }\n    if (request.method !== \'POST\') return new Response(JSON.stringify({status:\'ok\'}),{status:200,headers:corsHeaders});\n    const body = await request.clone().text();\n    const resp = await fetch(\'https://api.anthropic.com/v1/messages\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\',\'anthropic-version\':\'2023-06-01\',\'x-api-key\':env.ANTHROPIC_API_KEY},body});\n    return new Response(await resp.text(),{status:resp.status,headers:corsHeaders});\n  }\n};';
-  navigator.clipboard.writeText(code).then(function() { showToast('📋 Copied!'); }).catch(function() { showToast('Select and copy manually'); });
-}
-
-// ═══ INIT ═══
-document.addEventListener('DOMContentLoaded', function() {
-  loadState();
-  applySettings();
-  updateHero();
-  renderPortfolio();
-  updateSetupStatus();
-  drawProj();
-  if (S.lastPlays && S.lastPlays.length) renderPlayCards(S.lastPlays);
-  if (S.lastBrief) {
-    var bo = document.getElementById('brief-out');
-    bo.className = 'ai-box'; bo.textContent = S.lastBrief;
-    if (S.briefTs) document.getElementById('brief-ts').textContent = '🕐 Last: ' + S.briefTs;
-  }
-});
-</script>
-</body>
-</html>
