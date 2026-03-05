@@ -690,7 +690,7 @@ async function runMorningRoutine() {
       return (m.ticker || '') + ': ' + (m.title || m.question || '');
     }).join('\n');
     var ownedCtx = S.positions.length
-      ? '\n\nSKIP these — already owned: ' + S.positions.map(function(p) { return p.name; }).join(', ') + '.'
+      ? '\n\nSKIP these — already owned (ticker or title): ' + S.positions.map(function(p) { return p.ticker || p.name; }).join(', ') + '.'
       : '';
     var playsPrompt = 'Today is ' + today + '. Kalshi analyst. Bankroll $' + S.bank + '.'
       + '\n\nREAL open Kalshi contracts (use ONLY these):\n' + marketList
@@ -777,8 +777,10 @@ async function generatePlays() {
     return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '');
   }).join('\n');
 
+  // Build owned list using tickers where available, fall back to name
+  var ownedList = S.positions.map(function(p) { return p.ticker || p.name; }).join(', ');
   var alreadyOwned = S.positions.length
-    ? 'SKIP these — already owned: ' + S.positions.map(function(p) { return p.name; }).join(', ') + '.'
+    ? 'SKIP these contracts — already owned (by ticker or title): ' + ownedList + '.'
     : '';
 
   var prompt = 'Today is ' + today + '. Kalshi analyst. Bankroll $' + S.bank + '. Context: ' + brief
