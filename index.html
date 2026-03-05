@@ -616,8 +616,16 @@ async function runMorningRoutine() {
     await new Promise(function(r) { setTimeout(r, 8000); });
 
     setStep(2, 'active', 'Step 2: Building ' + numPlays + '-play sheet...');
-    var playsPrompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi prediction market plays. Bankroll $' + S.bank + '. Context: ' + briefText.slice(0,200) + '. Search Kalshi.com for open markets. Return ONLY raw JSON array, nothing else: [{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"}] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN EXACTLY ' + numPlays + ' ITEMS.';
-    var playsRaw = await callClaude(playsPrompt, true, 1200);
+    var markets = await getAllMarkets();
+    var marketList = markets.slice(0, 80).map(function(m) {
+      return (m.ticker || '') + ': ' + (m.title || m.question || '');
+    }).join('\n');
+    var playsPrompt = 'Today is ' + today + '. Kalshi analyst. Bankroll $' + S.bank + '.'
+      + '\n\nREAL open Kalshi contracts (use ONLY these):\n' + marketList
+      + '\n\nPick ' + numPlays + ' plays from the list. Copy EXACT ticker+title. Nearest expiry. Return ONLY JSON:'
+      + ' [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"why","risk":"LOW","expiry":"Mar 17"}]'
+      + ' 1-' + t1e + ' T1 $' + t1 + ' economic | ' + (t1e+1) + '-' + t2e + ' T2 $' + t2 + ' political | ' + (t2e+1) + '-' + numPlays + ' T3 $' + t3 + ' speculative. ALL ' + numPlays + ' items.'
+    var playsRaw = await callClaude(playsPrompt, false, 1200);
     var plays = safeJSON(playsRaw, []);
 
     if (plays.length) {
@@ -690,9 +698,21 @@ async function generatePlays() {
   var t2 = (S.bank * sc.pctPerPlay / 100).toFixed(0);
   var t3 = (S.bank * sc.pctPerPlay / 100 * 0.6).toFixed(0);
   var t1e = Math.ceil(numPlays * 0.4), t2e = Math.ceil(numPlays * 0.8);
-  var prompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi plays. Bankroll $' + S.bank + '. Context: ' + brief + '. Search Kalshi.com for open markets. Return ONLY raw JSON array: [{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"},{"num":2,...},...] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN ALL ' + numPlays + ' ITEMS.';
+  // Fetch real markets first so Claude picks from actual contracts
+  var markets = await getAllMarkets();
+  var marketList = markets.slice(0, 80).map(function(m, i) {
+    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '');
+  }).join('\n');
+
+  var prompt = 'Today is ' + today + '. Kalshi analyst. Bankroll $' + S.bank + '. Context: ' + brief
+    + '\n\nHere are the REAL currently open Kalshi contracts. Pick ONLY from this list:\n'
+    + marketList
+    + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry.'
+    + ' Return ONLY JSON array: [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"}]'
+    + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' political/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' speculative.'
+    + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list.';
   try {
-    var raw = await callClaude(prompt, true, 1200);
+    var raw = await callClaude(prompt, false, 1200);
     var plays = safeJSON(raw, []);
     if (plays.length) {
       S.lastPlays = plays; saveState(); renderPlayCards(plays);
