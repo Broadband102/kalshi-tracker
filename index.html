@@ -419,51 +419,9 @@ async function getAllMarkets() {
 
 function scoreMatch(market, searchTerm) {
   var title = (market.title || market.question || '').toLowerCase();
-  var ticker = (market.ticker || '').toLowerCase();
-  var combined = title + ' ' + ticker;
-  var term = searchTerm.toLowerCase().trim();
-
-  // Direct phrase match
-  if (combined.indexOf(term) >= 0) return 100;
-
-  // Ticker match (e.g. "FOMC" matches "KXFOMC-26MAR25")
-  if (ticker.indexOf(term.replace(/\s+/g,'')) >= 0) return 90;
-
-  // Keyword map: AI words -> Kalshi ticker keywords
-  var keyMap = {
-    'fed rate': 'fomc', 'federal reserve': 'fomc', 'fomc': 'fomc',
-    'interest rate': 'fomc', 'rate cut': 'fomc', 'rate hike': 'fomc',
-    'inflation': 'cpi', 'cpi': 'cpi', 'consumer price': 'cpi',
-    'unemployment': 'unemployment', 'jobs': 'jobs', 'nonfarm': 'jobs',
-    'payroll': 'jobs', 'gdp': 'gdp', 'recession': 'gdp',
-    'debt ceiling': 'debt', 'government shutdown': 'shutdown',
-    'tariff': 'tariff', 'trade': 'trade', 'china': 'china',
-    'bitcoin': 'btc', 'crypto': 'btc', 'btc': 'btc',
-    'ethereum': 'eth', 'eth': 'eth',
-    'oil': 'oil', 'crude': 'oil', 'gas': 'gas',
-    'senate': 'senate', 'house': 'house', 'congress': 'congress',
-    'election': 'election', 'president': 'president',
-    'trump': 'trump', 'biden': 'biden',
-    'stock market': 'sp500', 's&p': 'sp500', 'dow': 'dow',
-    'hurricane': 'hurricane', 'weather': 'weather',
-    'covid': 'covid', 'recession': 'recession'
-  };
-
-  // Check if any mapped keyword matches
-  for (var key in keyMap) {
-    if (term.indexOf(key) >= 0 && combined.indexOf(keyMap[key]) >= 0) return 80;
-    if (combined.indexOf(key) >= 0 && term.indexOf(keyMap[key]) >= 0) return 75;
-  }
-
-  // Word-by-word scoring
-  var words = term.split(/[\s\-_,]+/).filter(function(w) { return w.length > 2; });
+  var words = searchTerm.toLowerCase().split(' ').filter(function(w) { return w.length > 2; });
   var score = 0;
-  var matched = 0;
-  words.forEach(function(w) {
-    if (combined.indexOf(w) >= 0) { score += w.length * 3; matched++; }
-  });
-  // Bonus if multiple words match
-  if (matched > 1) score += matched * 10;
+  words.forEach(function(w) { if (title.indexOf(w) >= 0) score += w.length; });
   return score;
 }
 
@@ -591,7 +549,7 @@ async function runMorningRoutine() {
     await new Promise(function(r) { setTimeout(r, 8000); });
 
     setStep(2, 'active', 'Step 2: Building ' + numPlays + '-play sheet...');
-    var playsPrompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi prediction market plays. Bankroll $' + S.bank + '. Context: ' + briefText.slice(0,200) + '. Search Kalshi.com for open markets. Return ONLY raw JSON array, nothing else: [{"num":1,"market":"contract name","kalshiSearch":"FOMC","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"}] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN EXACTLY ' + numPlays + ' ITEMS.';
+    var playsPrompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi prediction market plays. Bankroll $' + S.bank + '. Context: ' + briefText.slice(0,200) + '. Search Kalshi.com for open markets. Return ONLY raw JSON array, nothing else: [{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"}] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN EXACTLY ' + numPlays + ' ITEMS.';
     var playsRaw = await callClaude(playsPrompt, true, 1200);
     var plays = safeJSON(playsRaw, []);
 
@@ -665,7 +623,7 @@ async function generatePlays() {
   var t2 = (S.bank * sc.pctPerPlay / 100).toFixed(0);
   var t3 = (S.bank * sc.pctPerPlay / 100 * 0.6).toFixed(0);
   var t1e = Math.ceil(numPlays * 0.4), t2e = Math.ceil(numPlays * 0.8);
-  var prompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi plays. Bankroll $' + S.bank + '. Context: ' + brief + '. Search Kalshi.com for open markets. IMPORTANT: kalshiSearch must be SHORT ticker-style (FOMC, CPI, unemployment, tariff, bitcoin, shutdown) NOT long phrases. Return ONLY raw JSON array: [{"num":1,"market":"contract name","kalshiSearch":"FOMC","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"},{"num":2,...},...] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN ALL ' + numPlays + ' ITEMS.';
+  var prompt = 'Today is ' + today + '. Generate exactly ' + numPlays + ' Kalshi plays. Bankroll $' + S.bank + '. Context: ' + brief + '. Search Kalshi.com for open markets. Return ONLY raw JSON array: [{"num":1,"market":"contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence why","risk":"LOW","expiry":"Mar 17"},{"num":2,...},...] Fill ALL ' + numPlays + ' slots: plays 1-' + t1e + ' Tier1 $' + t1 + ' Fed/economic | plays ' + (t1e+1) + '-' + t2e + ' Tier2 $' + t2 + ' political | plays ' + (t2e+1) + '-' + numPlays + ' Tier3 $' + t3 + ' speculative. YOU MUST RETURN ALL ' + numPlays + ' ITEMS.';
   try {
     var raw = await callClaude(prompt, true, 1200);
     var plays = safeJSON(raw, []);
@@ -727,17 +685,12 @@ function renderPlayCards(plays) {
     html += '<div class="conf-bar"><div class="conf-fill" style="width:' + conf + '%;background:' + (tf[tier] || 'var(--blue)') + '"></div></div>';
     html += '<div class="play-reason">' + (p.reason || '') + '</div>';
     html += '<div class="play-btns">';
-    html += '<button class="pbtn pbtn-add" data-num="' + p.num + '" onclick="addPlayByNum(+this.dataset.num)">➕ Add to Portfolio</button>';
+    html += '<button class="pbtn pbtn-add" data-num="' + p.num + '" onclick="addPlayToPort(S.lastPlays.find(function(x){return x.num==+this.dataset.num;}.bind(this))||{})">➕ Add to Portfolio</button>';
     html += '<button class="pbtn pbtn-skip" onclick="this.closest(\'.play-card\').style.opacity=\'0.35\';this.textContent=\'⏭ Skipped\'">Skip</button>';
     html += '</div></div>';
   }
   html += '</div>';
   document.getElementById('plays-out').innerHTML = html;
-}
-
-function addPlayByNum(num) {
-  var play = (S.lastPlays || []).find(function(x) { return x.num == num; });
-  if (play) addPlayToPort(play);
 }
 
 function addPlayToPort(play) {
@@ -989,18 +942,53 @@ async function testKalshiSearch() {
   var url = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
   if (!url) { alert('No proxy URL set'); return; }
   try {
-    var base = url.replace(/\/\$/, '');
+    var base = url.replace(/\/$/, '');
     var r = await fetch(base + '/kalshi-all');
     var d = await r.json();
     var all = d.markets || [];
     var msg = 'ALL ' + all.length + ' CLEAN MARKETS:\n\n';
     all.forEach(function(m, i) {
-      msg += (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '?') + '\n';
+      msg += (i+1) + '. [' + (m.ticker||'no-ticker') + '] ' + (m.title || m.question || '?') + '\n';
     });
     navigator.clipboard.writeText(msg).then(function() {
-      alert(msg.slice(0, 3000) + '\n\n--- FULL LIST COPIED TO CLIPBOARD ---');
+      alert(msg.slice(0, 3000) + '\n\n[COPIED TO CLIPBOARD]');
     }).catch(function() {
       alert(msg.slice(0, 3000));
     });
   } catch(e) { alert('Error: ' + e.message); }
 }
+
+function updateSetupStatus() {
+  var url = localStorage.getItem('kft-proxy') || '';
+  var el = document.getElementById('setup-status');
+  if (!el) return;
+  if (url) {
+    el.innerHTML = '🟢 Proxy saved: <strong style="color:var(--green);">' + url + '</strong><br>Click 🧪 Test Connection to verify.';
+    var inp = document.getElementById('proxy-input');
+    if (inp) inp.value = url;
+  } else {
+    el.innerHTML = '🔴 No proxy configured yet — follow steps 1–5 above.';
+  }
+}
+
+function copyCode() {
+  var code = 'export default {\n  async fetch(request, env) {\n    if (request.method === \'OPTIONS\') return new Response(null, {headers:{\'Access-Control-Allow-Origin\':\'*\',\'Access-Control-Allow-Methods\':\'POST,GET,OPTIONS\',\'Access-Control-Allow-Headers\':\'Content-Type\'}});\n    const corsHeaders = {\'Access-Control-Allow-Origin\':\'*\',\'Content-Type\':\'application/json\'};\n    const url = new URL(request.url);\n    if (url.pathname === \'/kalshi-all\') {\n      try {\n        const resp = await fetch(\'https://api.elections.kalshi.com/trade-api/v2/markets?limit=200&status=open\', {headers:{\'Accept\':\'application/json\',\'User-Agent\':\'Mozilla/5.0\'}});\n        if (!resp.ok) return new Response(JSON.stringify({markets:[],error:\'Kalshi \'+resp.status}),{status:200,headers:corsHeaders});\n        const data = await resp.json();\n        const all = data.markets || [];\n        const SPORTS = [\'lightning\',\'sabres\',\'flames\',\'mammoth\',\'lakers\',\'celtics\',\'heat\',\'bulls\',\'nets\',\'knicks\',\'warriors\',\'clippers\',\'nuggets\',\'suns\',\'mavs\',\'spurs\',\'rockets\',\'pelicans\',\'grizzlies\',\'jazz\',\'kings\',\'blazers\',\'thunder\',\'pacers\',\'bucks\',\'hawks\',\'hornets\',\'wizards\',\'magic\',\'pistons\',\'cavaliers\',\'raptors\',\'sixers\',\'patriots\',\'chiefs\',\'eagles\',\'cowboys\',\'bills\',\'ravens\',\'bengals\',\'browns\',\'steelers\',\'texans\',\'colts\',\'titans\',\'jaguars\',\'broncos\',\'raiders\',\'chargers\',\'seahawks\',\'rams\',\'falcons\',\'panthers\',\'saints\',\'buccaneers\',\'vikings\',\'bears\',\'lions\',\'packers\',\'yankees\',\'dodgers\',\'astros\',\'cubs\',\'braves\',\'mets\',\'phillies\',\'padres\',\'wins by over\',\'points scored\',\'goals scored\',\'rebounds\',\'touchdowns\',\'over 4.5\',\'over 5.5\',\'over 6.5\',\'over 7.5\',\'over 8.5\',\'over 9.5\',\'over 10.5\',\'over 19.5\',\'over 22.5\',\'nba game\',\'nfl game\',\'mlb game\',\'nhl game\',\'ufc\',\'super bowl\',\'stanley cup\',\'nba finals\',\'lopez\',\'okongwu\',\'kuzma\',\'tatum\',\'embiid\',\'curry\',\'durant\',\'giannis\',\'jokic\',\'lillard\',\'wembanyama\',\'mccollum\',\'mahomes\',\'kelce\'];\n        const isSports = t => { const s=\' \'+t.toLowerCase()+\' \'; return SPORTS.some(k=>s.includes(k)); };\n        const clean = all.filter(m=>!isSports(m.title||m.question||\'\'));\n        return new Response(JSON.stringify({markets:clean,count:clean.length,total:all.length,filtered:all.length-clean.length}),{status:200,headers:corsHeaders});\n      } catch(e) { return new Response(JSON.stringify({markets:[],error:e.message}),{status:200,headers:corsHeaders}); }\n    }\n    if (request.method !== \'POST\') return new Response(JSON.stringify({status:\'ok\'}),{status:200,headers:corsHeaders});\n    const body = await request.clone().text();\n    const resp = await fetch(\'https://api.anthropic.com/v1/messages\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\',\'anthropic-version\':\'2023-06-01\',\'x-api-key\':env.ANTHROPIC_API_KEY},body});\n    return new Response(await resp.text(),{status:resp.status,headers:corsHeaders});\n  }\n};';
+  navigator.clipboard.writeText(code).then(function() { showToast('📋 Copied!'); }).catch(function() { showToast('Select and copy manually'); });
+}
+
+// ═══ INIT ═══
+loadState();
+applySettings();
+updateHero();
+renderPortfolio();
+updateSetupStatus();
+drawProj();
+if (S.lastPlays && S.lastPlays.length) renderPlayCards(S.lastPlays);
+if (S.lastBrief) {
+  var bo = document.getElementById('brief-out');
+  bo.className = 'ai-box'; bo.textContent = S.lastBrief;
+  if (S.briefTs) document.getElementById('brief-ts').textContent = '🕐 Last: ' + S.briefTs;
+}
+</script>
+</body>
+</html>
