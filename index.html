@@ -181,6 +181,9 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--white);min
 <!-- DAILY BRIEF -->
 <div id="panel-daily" class="panel on">
   <div class="disclaimer">⚠️ <strong>Just for fun!</strong> $100 budget, not financial advice. Verify on Kalshi.com before trading!</div>
+  <div style="background:rgba(167,139,250,0.08);border:2px solid rgba(167,139,250,0.3);border-radius:14px;padding:10px 16px;font-size:0.78rem;color:rgba(167,139,250,0.9);line-height:1.6;margin-bottom:16px;font-weight:700;">
+    👋 <strong>Hey Lucas!</strong> Just a heads up — every time you hit a button that calls the AI (Brief, Plays, Sell Advisor, Morning Routine), it costs the account owner about <strong>~$0.05</strong>. Totally fine for regular use, just don't go button-crazy! 😄 The Anthropic API key is what makes the magic happen.
+  </div>
   <div class="card">
     <div class="card-title">⚙️ Settings</div>
     <div class="form-grid-4">
@@ -193,9 +196,29 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--white);min
   <div class="card">
     <div class="card-title">🤖 Today's AI Intelligence Brief</div>
     <p style="font-size:0.85rem;color:var(--mid);font-weight:700;margin-bottom:14px;">AI searches today's news + scans Kalshi markets to find mispricings. Target: 3%/day to hit $587K by Dec 31! Requires proxy setup (⚙️ Setup tab).</p>
+    <!-- Morning Routine mega button -->
+    <div style="background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(74,222,128,0.12));border:3px solid var(--yellow);border-radius:18px;padding:16px;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-family:'Fredoka One',cursive;font-size:1.15rem;color:var(--yellow);">☀️ Morning Routine</div>
+          <div style="font-size:0.75rem;color:var(--mid);font-weight:700;margin-top:2px;">Brief + 10 Plays + Live Prices in one shot · ~$0.05</div>
+        </div>
+        <button class="btn btn-yellow" onclick="runMorningRoutine()" id="btn-morning" style="font-size:1rem;padding:14px 28px;">
+          ☀️ Run Morning Routine
+        </button>
+      </div>
+      <div id="morning-progress" style="margin-top:10px;display:none;">
+        <div style="display:flex;flex-direction:column;gap:6px;" id="morning-steps">
+          <div id="mstep-1" style="display:flex;align-items:center;gap:8px;font-size:0.8rem;font-weight:800;color:var(--dim);">⏳ Step 1: Scanning news + finding opportunities...</div>
+          <div id="mstep-2" style="display:flex;align-items:center;gap:8px;font-size:0.8rem;font-weight:800;color:var(--dim);">⏸ Step 2: Building your 10-play sheet...</div>
+          <div id="mstep-3" style="display:flex;align-items:center;gap:8px;font-size:0.8rem;font-weight:800;color:var(--dim);">⏸ Step 3: Loading live Kalshi prices...</div>
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
-      <button class="btn btn-yellow" onclick="runBrief()" id="btn-brief">⚡ Generate Today's Brief</button>
-      <button class="btn btn-blue"   onclick="loadMarkets()" id="btn-markets">🔍 Scan Kalshi Markets</button>
+      <button class="btn btn-yellow" onclick="runBrief()" id="btn-brief">⚡ Brief Only</button>
+      <button class="btn btn-blue"   onclick="loadMarkets()" id="btn-markets">🔍 Scan Markets</button>
     </div>
     <div id="brief-ts" style="font-size:0.75rem;color:var(--dim);font-weight:700;margin-bottom:8px;"></div>
     <div class="ai-box" id="brief-out">Hit ⚡ Generate Today's Brief each morning to get AI-powered trade ideas!
@@ -614,6 +637,126 @@ Error: ${err.message}</div>`;
 <div style="font-size:0.82rem;color:var(--mid);line-height:1.8;">Proxy URL: <strong>${localStorage.getItem('kft-proxy')||'NOT SET'}</strong><br>
 Try the 🧪 Test Connection button in ⚙️ Setup to diagnose.</div>`;
   }
+}
+
+
+// ═══ MORNING ROUTINE ═══
+async function runMorningRoutine() {
+  const btn = document.getElementById('btn-morning');
+  const progress = document.getElementById('morning-progress');
+  const s1 = document.getElementById('mstep-1');
+  const s2 = document.getElementById('mstep-2');
+  const s3 = document.getElementById('mstep-3');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Running...';
+  progress.style.display = 'block';
+
+  const setStep = (num, status, text) => {
+    const el = document.getElementById('mstep-' + num);
+    if (!el) return;
+    const icons = { done: '✅', active: '⏳', wait: '⏸', err: '❌' };
+    el.style.color = status === 'done' ? 'var(--green)' : status === 'active' ? 'var(--yellow)' : status === 'err' ? 'var(--red)' : 'var(--dim)';
+    el.textContent = icons[status] + ' ' + text;
+  };
+
+  const today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const portCtx = S.positions.length
+    ? 'Holding: ' + S.positions.map(p=>`${p.name} (${p.dir}) at ${p.entry}¢`).join('; ')
+    : 'No positions yet.';
+
+  // ── STEP 1: Combined Brief + Plays in one API call ──
+  setStep(1, 'active', 'Step 1: Scanning news + finding opportunities...');
+  setStep(2, 'wait',   'Step 2: Building your 10-play sheet...');
+  setStep(3, 'wait',   'Step 3: Loading live Kalshi prices...');
+
+  const t1 = (S.bank * 0.12).toFixed(0);
+  const t2 = (S.bank * 0.10).toFixed(0);
+  const t3 = (S.bank * 0.06).toFixed(0);
+
+  const combinedPrompt = `Today is ${today}. Kalshi prediction market morning routine for a trader with $${S.bank} targeting 3%/day.
+${portCtx}
+
+Do TWO things in one response:
+
+PART 1 — DAILY BRIEF (max 200 words):
+Search today's news (economic data, Fed, politics, weather). Search Kalshi.com for open markets.
+Format:
+BRIEF_START
+📰 Top 3 signals: [list]
+🎯 Best opportunities: [list with YES/NO and why]
+🌡️ Vibe: Hot/Warm/Slow
+BRIEF_END
+
+PART 2 — 10 PLAYS (JSON array, no markdown):
+Based on news and open Kalshi markets, return exact contract names.
+PLAYS_START
+[{"num":1,"market":"EXACT Kalshi contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence why","risk":"LOW","expiry":"Mar 15"}]
+PLAYS_END
+
+Tiers: T1(1-4)$${t1} Fed/econ | T2(5-8)$${t2} political | T3(9-10)$${t3} speculative`;
+
+  try {
+    const raw = await callClaude(combinedPrompt, true);
+
+    // Parse BRIEF section
+    const briefMatch = raw.match(/BRIEF_START([\s\S]*?)BRIEF_END/);
+    const briefText = briefMatch ? briefMatch[1].trim() : raw.slice(0, 400);
+    
+    // Update brief display
+    const briefOut = document.getElementById('brief-out');
+    briefOut.className = 'ai-box';
+    briefOut.textContent = briefText;
+    S.lastBrief = briefText;
+    S.briefTs = new Date().toLocaleString();
+    document.getElementById('brief-ts').textContent = '🕐 Generated: ' + S.briefTs;
+
+    setStep(1, 'done', 'Step 1: Brief ready! ✓');
+
+    // Parse PLAYS section
+    setStep(2, 'active', 'Step 2: Building your 10-play sheet...');
+    const playsMatch = raw.match(/PLAYS_START([\s\S]*?)PLAYS_END/);
+    const playsText = playsMatch ? playsMatch[1].trim() : '';
+    const plays = safeJSON(playsText, []);
+
+    if (plays.length) {
+      S.lastPlays = plays;
+      saveState();
+      renderPlayCards(plays);
+      setStep(2, 'done', `Step 2: ${plays.length} plays generated! ✓`);
+
+      // Switch to plays tab to show results
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+      document.getElementById('panel-plays').classList.add('on');
+      // Highlight the plays tab
+      document.querySelectorAll('.tab').forEach(t => {
+        if (t.textContent.includes('10 Plays')) t.classList.add('on');
+      });
+
+      // ── STEP 3: Load live prices ──
+      setStep(3, 'active', 'Step 3: Loading live Kalshi prices...');
+      await loadAllPrices(plays);
+      setStep(3, 'done', 'Step 3: Live prices loaded! ✓');
+
+    } else {
+      setStep(2, 'err', 'Step 2: Could not parse plays — check Brief tab for raw output');
+      S.lastBrief = raw;
+      briefOut.textContent = raw;
+    }
+
+    saveState();
+    showToast('☀️ Morning Routine complete!');
+
+  } catch(e) {
+    setStep(1, 'err', 'Error: ' + e.message);
+    const briefOut = document.getElementById('brief-out');
+    briefOut.className = 'ai-box';
+    showAiError(briefOut, e);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '☀️ Run Morning Routine';
 }
 
 // ═══ DAILY BRIEF ═══
