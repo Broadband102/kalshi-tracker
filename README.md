@@ -1,2 +1,0 @@
-# kalshi-tracker
-Kalshi market
