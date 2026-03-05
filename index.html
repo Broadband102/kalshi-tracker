@@ -155,7 +155,7 @@ select.inp option{background:var(--card);}
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
       <div class="card-title" style="margin:0;">💼 Positions</div>
-      <button class="btn btn-blue" onclick="analyzePortfolio()" id="btn-analyze" style="padding:7px 14px;font-size:0.78rem;">🤖 AI Analyze All</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-green" onclick="refreshAllPrices()" id="btn-refresh-prices" style="padding:7px 14px;font-size:0.78rem;">🔄 Refresh Prices</button><button class="btn btn-blue" onclick="analyzePortfolio()" id="btn-analyze" style="padding:7px 14px;font-size:0.78rem;">🤖 AI Analyze All</button></div>
     </div>
     <div id="pos-list"></div>
   </div>
@@ -868,6 +868,40 @@ function closePos(i) {
   if (!confirm('Close "' + S.positions[i].name + '"?')) return;
   S.positions.splice(i, 1);
   saveState(); renderPortfolio(); updateHero(); showToast('📤 Closed!');
+}
+
+async function refreshAllPrices() {
+  if (!S.positions.length) { showToast('No positions to refresh', 'var(--yellow)'); return; }
+  var btn = document.getElementById('btn-refresh-prices');
+  btn.disabled = true; btn.textContent = '⏳ Refreshing...';
+
+  // Pre-fetch market cache once
+  await getAllMarkets();
+
+  var updated = 0;
+  for (var i = 0; i < S.positions.length; i++) {
+    var pos = S.positions[i];
+    try {
+      var market = await fetchKalshiMarket(pos.name);
+      if (market) {
+        var newPrice = pos.dir === 'YES'
+          ? (market.yesAsk != null ? market.yesAsk : market.lastPrice)
+          : (market.noAsk  != null ? market.noAsk  : market.lastPrice);
+        if (newPrice != null) {
+          S.positions[i].curr = newPrice;
+          updated++;
+        }
+      }
+    } catch(e) {}
+    // Small delay between fetches
+    await new Promise(function(r) { setTimeout(r, 150); });
+  }
+
+  saveState();
+  renderPortfolio();
+  updateHero();
+  btn.disabled = false; btn.textContent = '🔄 Refresh Prices';
+  showToast('✅ Updated ' + updated + '/' + S.positions.length + ' prices!');
 }
 
 function renderPortfolio() {
