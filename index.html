@@ -732,7 +732,7 @@ Write a DAILY BRIEF (max 250 words, use emojis):
     setStep(1, 'done', 'Step 1: Brief ready! ✓');
 
     // ── STEP 2: Plays ── (small pause to avoid rate limit)
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 8000)); // 8 sec gap so rate limit resets
     setStep(2, 'active', 'Step 2: Building your 10-play sheet...');
 
     const playsPrompt = `Today is ${today}. Kalshi 10-play sheet. Trader has $${S.bank}. Context: ${briefText.slice(0,300)}
@@ -741,7 +741,7 @@ Return ONLY a valid JSON array, nothing else before or after it:
 [{"num":1,"market":"exact Kalshi contract title","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence","risk":"LOW","expiry":"Mar 15"},...]
 Tiers: T1(plays 1-4) $${t1} Fed/economic | T2(plays 5-8) $${t2} political | T3(plays 9-10) $${t3} speculative`;
 
-    const playsRaw = await callClaude(playsPrompt, false); // no web search — uses brief context
+    const playsRaw = await callClaude(playsPrompt, true, 700); // web search ON so it can find real contracts
     const plays = safeJSON(playsRaw, []);
 
     if (plays.length) {
@@ -869,7 +869,7 @@ Tier 3 plays 9-10: $${t3} each — weather/events, speculative fun
 IMPORTANT: The "market" field must be copy-pasted exactly from Kalshi so the user can find it instantly. If unsure of exact name, include "kalshiSearch" so they can look it up.`;
 
   try {
-    const raw=await callClaude(prompt,false,700);
+    const raw=await callClaude(prompt,true,700);
     const plays=safeJSON(raw,[]);
     if(plays.length){ S.lastPlays=plays; saveState(); renderPlayCards(plays); setTimeout(()=>loadAllPrices(plays), 500); }
     else { document.getElementById('plays-out').innerHTML='<div class="card"><div style="font-size:0.85rem;color:var(--mid);white-space:pre-wrap;">'+raw+'</div></div>'; }
