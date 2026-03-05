@@ -814,16 +814,16 @@ async function generatePlays() {
   ];
   if (!balanced.length) balanced = markets.slice(0, 80); // last resort
 
-  // Filter out near-settled markets (yes_price ≤5 or ≥95 = basically done)
+  // Filter out near-settled markets
   balanced = balanced.filter(function(m) {
-    var p = m.yes_ask || m.yes_price || m.last_price || 50;
-    return p > 5 && p < 95;
+    var p = m.yes_ask || m.yes_bid || m.yes_price || m.last_price || 50;
+    return p >= 10 && p <= 90;
   });
 
   var marketList = balanced.map(function(m, i) {
-    var cat = m.category || '';
-    var price = m.yes_ask || m.yes_price || m.last_price || '?';
-    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '') + ' — YES:' + price + '¢' + (cat ? ' (' + cat + ')' : '');
+    var price = m.yes_ask || m.yes_bid || m.yes_price || m.last_price || '?';
+    var noPrice = m.no_ask || m.no_bid || (price !== '?' ? 100 - price : '?');
+    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '') + ' | YES:' + price + '¢ NO:' + noPrice + '¢';
   }).join('\n');
 
   // Build owned list using tickers where available, fall back to name
@@ -839,7 +839,15 @@ async function generatePlays() {
     + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry. No duplicate contracts.'
     + ' Return ONLY JSON array: [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"}]'
     + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic/fed/cpi | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' geopolitics/politics/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' tech/climate/speculative.'
-    + ' RETURN ALL ' + numPlays + ' ITEMS. NO contracts outside the list. NO duplicate contracts — each must be a different ticker. NO contracts expiring within 3 days. ONLY pick contracts where YES price is between 20 and 80 cents — skip anything trading at 1-5 cents or 95-99 cents.';
+    + ' RULES: '
+    + '1. ONLY use contracts from the list above. '
+    + '2. NO duplicates — every play must be a different ticker. '
+    + '3. NO contracts expiring within 3 days. '
+    + '4. ONLY contracts with YES price between 15 and 85 cents — skip near-certain outcomes. '
+    + '5. MINIMUM EDGE REQUIREMENT: your fairValue MUST differ from the YES price by AT LEAST 15 cents. If edge < 15 cents, SKIP that contract entirely. Do not force plays — return fewer than ' + numPlays + ' if needed. '
+    + '6. Edge = fairValue minus YES price. Positive = buy YES. Negative edge (fairValue < price) = buy NO instead. '
+    + '7. Base fairValue on todays news, recent data, and genuine probability assessment — not just the market price. '
+    + 'RETURN UP TO ' + numPlays + ' ITEMS that meet ALL rules. Quality over quantity.';
   try {
     var raw = await callClaude(prompt, false, 1200);
     var plays = safeJSON(raw, []);
