@@ -595,10 +595,15 @@ async function loadLivePrice(num, searchTerm, category) {
       }
       var buyLink = document.getElementById('buylink-' + num);
       if (buyLink && market.ticker) {
-        // Search URL always works — takes you right to the contract
-        buyLink.href = 'https://kalshi.com/markets?search=' + encodeURIComponent(market.ticker);
+        // Kalshi URL: /markets/EVENT_TICKER/  e.g. KXCPI-26MAY from KXCPI-26MAY-T0.1
+        var parts = market.ticker.split('-');
+        var eventTicker = parts.slice(0, 2).join('-').toLowerCase(); // e.g. kxcpi-26may
+        var directUrl = 'https://kalshi.com/markets/' + eventTicker + '/';
+        var searchUrl = 'https://kalshi.com/markets?search=' + encodeURIComponent(market.ticker);
+        // Try direct URL first, fall back to search
+        buyLink.href = directUrl;
         buyLink.textContent = '🎯 ' + market.ticker;
-        buyLink.title = 'Click to find: ' + (market.title || market.ticker);
+        buyLink.title = market.title || market.ticker;
       }
       if (market.title) {
         var existing = document.getElementById('ctitle-' + num);
