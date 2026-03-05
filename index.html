@@ -710,140 +710,27 @@ async function runAfternoonRefresh() {
 
   const numPlays = S.plays || 10;
   const scaling = getOptimalPlays(S.bank);
-  const sizeNew = (S.bank * scaling.pctPerPlay / 100).toFixed(0);
-
-  const prompt = `Afternoon session ${today}. Trader has $${S.bank}, targeting 3%/day.
-Current positions: ${posText}
-
-Search today's afternoon news. Two tasks:
-1. POSITION CHECK: For each position, one-line update — HOLD/SELL/WATCH and why based on latest news.
-2. NEW OPPORTUNITIES: Find 3-5 NEW Kalshi contracts that have moved since this morning due to afternoon news. $${sizeNew} each.
-
-Format clearly with headers. Be concise, actionable, use emojis.`;
-
-  try {
-    const text = await callClaude(prompt, true, 700);
-    out.className = 'ai-box';
-    out.textContent = text;
-    S.lastBrief = text;
-    S.briefTs = new Date().toLocaleString() + ' (Afternoon)';
-    document.getElementById('brief-ts').textContent = '🌆 Afternoon refresh: ' + new Date().toLocaleString();
-    saveState();
-    showToast('🌆 Afternoon refresh done!');
-  } catch(e) {
-    out.className = 'ai-box';
-    showAiError(out, e);
-  }
-  btn.disabled = false; btn.textContent = '🌆 Afternoon Refresh';
-}
-
-// ═══ MORNING ROUTINE ═══
-async function runMorningRoutine() {
-  const btn = document.getElementById('btn-morning');
-  const progress = document.getElementById('morning-progress');
-  const s1 = document.getElementById('mstep-1');
-  const s2 = document.getElementById('mstep-2');
-  const s3 = document.getElementById('mstep-3');
-
-  btn.disabled = true;
-  btn.textContent = '⏳ Running...';
-  progress.style.display = 'block';
-
-  const setStep = (num, status, text) => {
-    const el = document.getElementById('mstep-' + num);
-    if (!el) return;
-    const icons = { done: '✅', active: '⏳', wait: '⏸', err: '❌' };
-    el.style.color = status === 'done' ? 'var(--green)' : status === 'active' ? 'var(--yellow)' : status === 'err' ? 'var(--red)' : 'var(--dim)';
-    el.textContent = icons[status] + ' ' + text;
-  };
-
-  const today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const portCtx = S.positions.length
-    ? 'Holding: ' + S.positions.map(p=>`${p.name} (${p.dir}) at ${p.entry}¢`).join('; ')
-    : 'No positions yet.';
-
-  // ── STEP 1: Combined Brief + Plays in one API call ──
-  setStep(1, 'active', 'Step 1: Scanning news + finding opportunities...');
-  setStep(2, 'wait',   'Step 2: Building your 10-play sheet...');
-  setStep(3, 'wait',   'Step 3: Loading live Kalshi prices...');
-
-  const t1 = (S.bank * 0.12).toFixed(0);
-  const t2 = (S.bank * 0.10).toFixed(0);
-  const t3 = (S.bank * 0.06).toFixed(0);
-
-  const combinedPrompt = `Today is ${today}. Kalshi prediction market morning routine for a trader with $${S.bank} targeting 3%/day.
-${portCtx}
-
-Do TWO things in one response:
-
-PART 1 — DAILY BRIEF (max 200 words):
-Search today's news (economic data, Fed, politics, weather). Search Kalshi.com for open markets.
-Format:
-BRIEF_START
-📰 Top 3 signals: [list]
-🎯 Best opportunities: [list with YES/NO and why]
-🌡️ Vibe: Hot/Warm/Slow
-BRIEF_END
-
-PART 2 — 10 PLAYS (JSON array, no markdown):
-Based on news and open Kalshi markets, return exact contract names.
-PLAYS_START
-[{"num":1,"market":"EXACT Kalshi contract name","kalshiSearch":"2-3 word search","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1},"reason":"one sentence why","risk":"LOW","expiry":"Mar 15"}]
-PLAYS_END
-
-Tiers: T1(1-4)$${t1} Fed/econ | T2(5-8)$${t2} political | T3(9-10)$${t3} speculative`;
-
-  try {
-    const briefOut = document.getElementById('brief-out');
-    briefOut.className = 'ai-box';
-
-    // ── STEP 1: Brief ──
-    const briefPrompt = `Today is ${today}. Kalshi prediction market analyst. Trader has $${S.bank}, targeting 3%/day. ${portCtx}
-Search today's news (economic data, Fed, politics, weather) and Kalshi.com for open markets.
-Write a DAILY BRIEF (max 250 words, use emojis):
-1. 📰 Top 3 News Signals
-2. 🎯 Top 4 Kalshi Opportunities (market name, YES/NO, why, confidence %)
-3. 💼 Positions: ${S.positions.length ? S.positions.map(p=>p.name).join(', ') : 'none yet'}
-4. 🌡️ Vibe: Hot/Warm/Slow`;
-
-    const briefText = await callClaude(briefPrompt, true, 600);
-    briefOut.textContent = briefText;
-    S.lastBrief = briefText;
-    S.briefTs = new Date().toLocaleString();
-    document.getElementById('brief-ts').textContent = '🕐 Generated: ' + S.briefTs;
-    saveState();
-    setStep(1, 'done', 'Step 1: Brief ready! ✓');
-
-    // ── STEP 2: Plays ── (small pause to avoid rate limit)
-    await new Promise(r => setTimeout(r, 8000)); // 8 sec gap so rate limit resets
-    setStep(2, 'active', 'Step 2: Building your 10-play sheet...');
-
-    const numPlays = S.plays || 10;
-  const scaling = getOptimalPlays(S.bank);
   const t1size = (S.bank * scaling.pctPerPlay/100 * 1.2).toFixed(0);
   const t2size = (S.bank * scaling.pctPerPlay/100).toFixed(0);
   const t3size = (S.bank * scaling.pctPerPlay/100 * 0.6).toFixed(0);
   const t1end = Math.ceil(numPlays * 0.4);
   const t2end = Math.ceil(numPlays * 0.8);
 
-  const playsPrompt = `Today is ${today}. Kalshi ${numPlays}-play sheet. Bankroll: $${S.bank}. Context: ${briefText.slice(0,300)}
+  const playsPrompt = `Today is ${today}. Generate exactly ${numPlays} Kalshi prediction market plays.
+Bankroll: $${S.bank}. Context: ${briefText.slice(0,250)}
 
-Search Kalshi.com for currently open prediction markets RIGHT NOW. Find REAL open contracts.
-You MUST return exactly ${numPlays} plays. Do not stop early.
+Search today's news for market-moving events. For each play provide a SPECIFIC 2-4 word Kalshi search term that will find the exact open contract.
 
-Return ONLY a raw JSON array — no text before or after, no markdown fences:
-[
-  {"num":1,"market":"EXACT Kalshi contract title word for word","kalshiSearch":"2-3 word search term","category":"Economic","direction":"YES","entryTarget":62,"edge":12,"confidence":72,"tier":1,"size":${t1size},"reason":"one sentence why","risk":"LOW","expiry":"Mar 15"}
-]
+You MUST return exactly ${numPlays} items. Search across: Fed rates, CPI, jobs, Senate races, House votes, state elections, crypto, oil, weather events, GDP.
 
-Tier rules — fill ALL slots:
-- Plays 1-${t1end}: Tier 1, $${t1size} each — Fed rates, CPI, jobs, economic data (HIGH confidence)
-- Plays ${t1end+1}-${t2end}: Tier 2, $${t2size} each — political, legislative, elections (MEDIUM confidence)  
-- Plays ${t2end+1}-${numPlays}: Tier 3, $${t3size} each — geopolitical, weather, wildcards (SPECULATIVE)
+Return ONLY raw JSON array, zero text outside it:
+[{"num":1,"market":"Short descriptive name","kalshiSearch":"fed march rate cut","category":"Economic","direction":"YES","fairValue":64,"tier":1,"size":${t1size},"reason":"one sentence why based on today news","risk":"LOW","expiry":"Mar 17","confidence":78}]
 
-IMPORTANT: Return all ${numPlays} plays. Search broadly across Fed, inflation, Senate, House, state politics, weather, crypto, commodities to find enough markets.`;
+- fairValue = what YOU think the true probability is (not the market price)
+- kalshiSearch = 2-4 words someone would type to find this on Kalshi
+- Fill all ${numPlays} slots across: plays 1-${t1end} Tier1 economic $${t1size} | plays ${t1end+1}-${t2end} Tier2 political $${t2size} | plays ${t2end+1}-${numPlays} Tier3 wildcard $${t3size}`;
 
-    const playsRaw = await callClaude(playsPrompt, true, 700); // web search ON so it can find real contracts
+  const playsRaw = await callClaude(playsPrompt, true, 900); // web search ON so it can find real contracts
     const plays = safeJSON(playsRaw, []);
 
     if (plays.length) {
@@ -983,45 +870,54 @@ IMPORTANT: The "market" field must be copy-pasted exactly from Kalshi so the use
 }
 
 function renderPlayCards(plays){
-  const tc={1:'tier1',2:'tier2',3:'tier3'}, tb={1:'pb-t1',2:'pb-t2',3:'pb-t3'}, tl={1:'🟢 Tier 1',2:'🔵 Tier 2',3:'🟠 Tier 3'}, tf={1:'var(--green)',2:'var(--blue)',3:'var(--orange)'};
+  const tc={1:'tier1',2:'tier2',3:'tier3'};
+  const tb={1:'pb-t1',2:'pb-t2',3:'pb-t3'};
+  const tl={1:'🟢 Tier 1',2:'🔵 Tier 2',3:'🟠 Tier 3'};
+  const tf={1:'var(--green)',2:'var(--blue)',3:'var(--orange)'};
+
   document.getElementById('plays-out').innerHTML='<div class="plays-grid">'+plays.map(p=>{
     const dir=(p.direction||'YES').toUpperCase();
     const conf=Math.min(100,Math.max(0,p.confidence||50));
-    const ret=p.entryTarget?((p.edge/p.entryTarget)*100).toFixed(1):'?';
     const pd=JSON.stringify(p).replace(/"/g,'&quot;');
-    return `<div class="play-card ${tc[p.tier]||'tier2'}">
+
+    return `<div class="play-card ${tc[p.tier]||'tier2'}" id="pcard-${p.num}">
       <div class="play-num">${p.num||''}</div>
       <span class="play-badge ${tb[p.tier]||'pb-t2'}">${tl[p.tier]||'Tier 2'}</span>
       <div class="play-title">${p.market||'Market'}</div>
       <div class="play-cat">${p.category||''} · Expires ~${p.expiry||'?'}</div>
-      <!-- Live price row -->
-      <div id="price-${p.num}" style="background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">Live Kalshi Price</div>
-          <div id="liveprice-${p.num}" style="font-family:'Fredoka One',cursive;font-size:1.3rem;color:var(--dim);">—¢</div>
+
+      <!-- LIVE PRICE BOX — populated by loadLivePrice() -->
+      <div id="price-${p.num}" style="background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div>
+            <div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">Live Kalshi Price</div>
+            <div id="liveprice-${p.num}" style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--dim);">⏳ Loading...</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;">AI Fair Value</div>
+            <div style="font-family:'Fredoka One',cursive;font-size:1.4rem;color:var(--yellow);">${p.fairValue||p.entryTarget||'?'}¢</div>
+          </div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;">
+        <div id="edge-${p.num}" style="font-size:0.78rem;font-weight:800;color:var(--dim);">Calculating edge from live price...</div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
           <button onclick="loadLivePrice(${p.num},'${(p.kalshiSearch||p.market||'').replace(/'/g,"\'").slice(0,40)}')"
-            style="background:rgba(96,165,250,0.2);border:2px solid var(--blue);color:var(--blue);border-radius:8px;padding:5px 10px;font-weight:800;font-size:0.72rem;cursor:pointer;"
-            id="pricebtn-${p.num}">🔄 Load Price</button>
-          <a href="https://kalshi.com/markets?search=${encodeURIComponent(p.kalshiSearch||p.market||'')}" target="_blank"
-            style="background:rgba(74,222,128,0.15);border:2px solid var(--green);color:var(--green);border-radius:8px;padding:5px 10px;font-weight:800;font-size:0.72rem;text-decoration:none;">
+            style="flex:1;background:rgba(96,165,250,0.2);border:2px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;cursor:pointer;"
+            id="pricebtn-${p.num}">🔄 Refresh Price</button>
+          <a id="buylink-${p.num}" href="https://kalshi.com/markets?search=${encodeURIComponent(p.kalshiSearch||p.market||'')}" target="_blank"
+            style="flex:1;text-align:center;background:rgba(74,222,128,0.2);border:2px solid var(--green);color:var(--green);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;text-decoration:none;">
             🛒 Buy on Kalshi
           </a>
         </div>
       </div>
+
       <div class="play-pills">
         <span class="pill ${dir==='YES'?'pill-yes':'pill-no'}">${dir}</span>
-        <span class="pill pill-price">Buy ~${p.entryTarget||'?'}¢</span>
-        <span class="pill pill-edge">+${p.edge||'?'}¢ edge</span>
         <span class="pill pill-size">$${p.size||'?'}</span>
+        <span class="pill" style="background:rgba(167,139,250,0.15);color:var(--purple);border:2px solid var(--purple);">🎯 ${conf}% conf</span>
+        <span class="pill" style="background:rgba(255,255,255,0.05);color:var(--dim);border:2px solid var(--border);">⚠️ ${p.risk||'MED'}</span>
       </div>
+
       <div class="conf-bar"><div class="conf-fill" style="width:${conf}%;background:${tf[p.tier]||'var(--blue)'}"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:0.72rem;font-weight:800;color:var(--dim);margin-bottom:8px;">
-        <span>Confidence: <strong style="color:${tf[p.tier]}">${conf}%</strong></span>
-        <span>Risk: <strong>${p.risk||'MED'}</strong></span>
-        <span>Est: <strong style="color:var(--yellow)">+${ret}%</strong></span>
-      </div>
       <div class="play-reason">${p.reason||''}</div>
       <div class="play-btns">
         <button class="pbtn pbtn-add" onclick='addPlayToPort(${pd})'>➕ Add to Portfolio</button>
@@ -1208,45 +1104,79 @@ function copyCode(){
 
 // ═══ LIVE PRICE LOADER ═══
 async function loadLivePrice(num, searchTerm) {
-  const btn = document.getElementById('pricebtn-' + num);
+  const btn     = document.getElementById('pricebtn-' + num);
   const display = document.getElementById('liveprice-' + num);
-  const row = document.getElementById('price-' + num);
+  const edgeEl  = document.getElementById('edge-' + num);
+  const row     = document.getElementById('price-' + num);
+  const card    = document.getElementById('pcard-' + num);
   if (!btn || !display) return;
 
-  btn.textContent = '⏳';
-  btn.disabled = true;
+  btn.textContent = '⏳'; btn.disabled = true;
 
   const market = await fetchKalshiMarket(searchTerm);
 
   if (market) {
-    // Show YES ask price (what you'd pay to buy YES)
-    const yesPrice = market.yesAsk != null ? market.yesAsk : market.lastPrice;
-    const noPrice  = market.noAsk  != null ? market.noAsk  : (yesPrice != null ? 100 - yesPrice : null);
+    const yesAsk  = market.yesAsk  != null ? market.yesAsk  : market.lastPrice;
+    const noAsk   = market.noAsk   != null ? market.noAsk   : (yesAsk != null ? 100 - yesAsk : null);
 
-    if (yesPrice != null) {
-      display.innerHTML = `<span style="color:var(--green)">YES ${yesPrice}¢</span> <span style="color:var(--dim);font-size:0.8rem;">/ NO ${noPrice}¢</span>`;
-      row.style.borderColor = 'var(--green)';
+    if (yesAsk != null) {
+      // Show live price
+      display.innerHTML = `<span style="color:var(--green);font-size:1.3rem;">YES ${yesAsk}¢</span> <span style="color:var(--mid);font-size:0.85rem;">/ NO ${noAsk}¢</span>`;
 
-      // Update the buy link to go directly to this contract
-      const buyLink = row.querySelector('a');
+      // Get AI fair value from the card's stored data
+      const plays = S.lastPlays || [];
+      const play  = plays.find(p => p.num == num);
+      const fairVal = play ? (play.fairValue || play.entryTarget || null) : null;
+
+      if (fairVal != null) {
+        const edge = fairVal - yesAsk;
+        const edgeColor = edge > 8 ? 'var(--green)' : edge > 0 ? 'var(--yellow)' : 'var(--red)';
+        const edgeLabel = edge > 8 ? '🔥 Strong edge' : edge > 0 ? '👍 Mild edge' : '⚠️ No edge — skip?';
+        const retPct = yesAsk > 0 ? (((100 - yesAsk) / yesAsk) * 100).toFixed(0) : '?';
+
+        edgeEl.innerHTML = `<span style="color:${edgeColor};font-weight:800;">${edgeLabel}: ${edge>0?'+':''}${edge}¢</span>
+          <span style="color:var(--dim);font-size:0.7rem;margin-left:8px;">Win pays +${retPct}% on your bet</span>`;
+
+        // Update card border color based on edge quality
+        if (card) {
+          card.style.borderColor = edge > 8 ? 'var(--green)' : edge > 0 ? 'var(--yellow)' : 'var(--red)';
+        }
+        row.style.borderColor = edgeColor;
+
+        // Update add-to-portfolio entry price with real price
+        if (play) play.entryTarget = yesAsk;
+      } else {
+        edgeEl.innerHTML = '<span style="color:var(--mid);">Live price loaded — check fair value vs market price</span>';
+      }
+
+      // Update buy link to exact contract
+      const buyLink = document.getElementById('buylink-' + num);
       if (buyLink && market.ticker) {
         buyLink.href = market.url;
-        buyLink.textContent = '🛒 Buy on Kalshi';
+        buyLink.title = market.title;
       }
 
-      // Show contract title if different
+      // Show actual contract title found
       if (market.title && market.title.length > 5) {
-        const titleEl = document.createElement('div');
-        titleEl.style.cssText = 'font-size:0.68rem;color:var(--mid);font-weight:700;margin-top:3px;';
-        titleEl.textContent = '📋 ' + market.title.slice(0, 60);
-        display.appendChild(titleEl);
+        const existing = document.getElementById('contract-title-' + num);
+        if (!existing) {
+          const t = document.createElement('div');
+          t.id = 'contract-title-' + num;
+          t.style.cssText = 'font-size:0.68rem;color:var(--mid);font-weight:700;margin-top:5px;';
+          t.textContent = '📋 ' + market.title.slice(0, 70);
+          display.parentNode.appendChild(t);
+        }
       }
+
+      btn.textContent = '🔄 Refresh';
     } else {
-      display.textContent = 'Price N/A';
+      display.textContent = 'Price unavailable';
+      edgeEl.textContent = 'Could not get price — click Buy on Kalshi to check manually';
+      btn.textContent = '🔄 Retry';
     }
-    btn.textContent = '🔄 Refresh';
   } else {
-    display.innerHTML = '<span style="color:var(--yellow);font-size:0.75rem;">Not found — try Buy on Kalshi →</span>';
+    display.innerHTML = '<span style="color:var(--yellow);font-size:0.8rem;">Contract not found on Kalshi</span>';
+    edgeEl.innerHTML = '<span style="color:var(--dim);font-size:0.75rem;">Try clicking 🛒 Buy on Kalshi and search manually</span>';
     btn.textContent = '🔄 Retry';
   }
   btn.disabled = false;
