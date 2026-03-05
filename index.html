@@ -937,25 +937,23 @@ async function refreshAllPrices() {
   for (var i = 0; i < S.positions.length; i++) {
     var pos = S.positions[i];
     try {
-      // Use stored ticker first for direct match, fall back to name search
       var searchTerm = pos.ticker || pos.name;
+      console.log('[Refresh] Fetching price for:', searchTerm);
       var market = await fetchKalshiMarket(searchTerm);
-      if (!market && pos.ticker !== pos.name) {
-        market = await fetchKalshiMarket(pos.name);
-      }
+      console.log('[Refresh] Market result:', market ? JSON.stringify({ticker:market.ticker,last:market.lastPrice,mid:market.mid,ask:market.yesAsk}) : 'NULL');
       if (market) {
         var newPrice = market.lastPrice != null ? market.lastPrice
           : market.mid != null ? market.mid
           : pos.dir === 'YES' ? market.yesAsk
           : market.noAsk;
+        console.log('[Refresh] New price:', newPrice, 'old:', pos.curr);
         if (newPrice != null) {
           S.positions[i].curr = newPrice;
-          // Also update the stored ticker if we got a better one
           if (market.ticker && !pos.ticker) S.positions[i].ticker = market.ticker;
           updated++;
         }
       }
-    } catch(e) { console.warn('Refresh failed for', pos.name, e); }
+    } catch(e) { console.error('[Refresh] Error for', pos.name, e.message); }
     // Small delay between fetches
     await new Promise(function(r) { setTimeout(r, 150); });
   }
