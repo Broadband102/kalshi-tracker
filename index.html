@@ -910,15 +910,24 @@ async function parseMarket(m) {
   var yesBid  = m.yes_bid  != null ? m.yes_bid  : null;
   var lastPrice = m.last_price != null ? m.last_price : null;
   var mid = (yesBid != null && yesAsk != null) ? Math.round((yesBid + yesAsk) / 2) : null;
+  // Build deep URL: kalshi.com/markets/{series}/{event_ticker}
+  // e.g. KXFED-27APR-T3.75 → event_ticker=KXFED-27APR → kalshi.com/markets/kxfed/kxfed-27apr
+  var ticker     = m.ticker || '';
+  var eventTk    = m.event_ticker || ticker.split('-').slice(0,2).join('-');
+  var series     = eventTk.split('-')[0].toLowerCase();
+  var eventSlug  = eventTk.toLowerCase();
+  var deepUrl    = 'https://kalshi.com/markets/' + series + '/' + eventSlug;
+
   return {
-    ticker:    m.ticker || '',
-    title:     m.title  || m.question || '',
-    yesAsk:    yesAsk,
-    noAsk:     m.no_ask != null ? m.no_ask : null,
-    yesBid:    yesBid,
-    lastPrice: lastPrice,
-    mid:       mid,
-    url:       'https://kalshi.com/markets/' + (m.ticker || '')
+    ticker:     ticker,
+    title:      m.title || m.question || '',
+    yesAsk:     yesAsk,
+    noAsk:      m.no_ask != null ? m.no_ask : null,
+    yesBid:     yesBid,
+    lastPrice:  lastPrice,
+    mid:        mid,
+    eventTicker: eventTk,
+    url:        deepUrl
   };
 }
 
@@ -1254,6 +1263,26 @@ async function generatePlays() {
     var plays = JSON.parse(clean.slice(s, e+1));
     if (!plays.length) throw new Error('AI returned empty plays array');
 
+    // Enrich each play with the correct deep URL from live market data
+    var lookup = window._marketLookup || {};
+    plays = plays.map(function(play) {
+      var mkt = lookup[play.ticker];
+      if (mkt) {
+        var eventTk   = mkt.event_ticker || play.ticker.split('-').slice(0,2).join('-');
+        var series    = eventTk.split('-')[0].toLowerCase();
+        var eventSlug = eventTk.toLowerCase();
+        play.url      = 'https://kalshi.com/markets/' + series + '/' + eventSlug;
+        play.entryTarget = mkt.yes_ask; // always use live yes_ask, not AI guess
+      } else {
+        // Fallback: derive from ticker directly
+        var parts  = play.ticker.split('-');
+        var series = parts[0].toLowerCase();
+        var evSlug = (parts[0] + '-' + (parts[1]||'')).toLowerCase();
+        play.url   = 'https://kalshi.com/markets/' + series + '/' + evSlug;
+      }
+      return play;
+    });
+
     S.lastPlays = plays;
     saveState();
     renderPlayCards(plays);
@@ -1389,7 +1418,11 @@ function importPortfolio(event) {
           pnl:       pnl,        // dollars — unrealised P&L from CSV
           liveCents: lastCents,  // cents — last known price (refreshed by API later)
           added:     closeDate || '',
-          url:       'https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]
+          url:       (function() {
+          var parts = ticker.toLowerCase().split('-');
+          var evSlug = parts.slice(0,2).join('-');
+          return 'https://kalshi.com/markets/' + parts[0] + '/' + evSlug;
+        })()
         });
       }
 
@@ -1495,7 +1528,7 @@ function renderPlayCards(plays) {
     const dirYes = p.direction !== 'NO';
     const rc = p.risk === 'LOW' ? '#3fb950' : p.risk === 'HIGH' ? '#f85149' : '#d29922';
     const expRet = p.edge && p.entryTarget ? ((p.edge / p.entryTarget)*100).toFixed(1)+'%' : '';
-    const seriesUrl = 'https://kalshi.com/markets/' + (p.ticker||'').toLowerCase().split('-')[0];
+    const seriesUrl = p.url || ('https://kalshi.com/markets/' + (p.ticker||'').toLowerCase().split('-')[0]);
     return `<div class="play-card${isHeld?' held':''}" style="--accent-line:${tc}">
       <div class="play-num">#${p.num||''}</div>
       <div class="play-market">${p.market||'Unknown Market'}</div>
