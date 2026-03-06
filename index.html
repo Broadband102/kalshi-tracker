@@ -627,12 +627,13 @@ select.inp option { background: var(--card); }
       <button class="btn btn-green" onclick="filterHistory()">📊 Analyze Range</button>
     </div>
     <div id="hist-summary" style="display:none;" class="stat-grid" style="margin-bottom:12px;">
-      <div class="stat-box"><div class="sv" id="hs-pnl" style="color:var(--green)">$0</div><div class="sl">Net P&L</div></div>
-      <div class="stat-box"><div class="sv" id="hs-wins" style="color:var(--green)">0</div><div class="sl">Winners</div></div>
-      <div class="stat-box"><div class="sv" id="hs-losses" style="color:var(--red)">0</div><div class="sl">Losers</div></div>
-      <div class="stat-box"><div class="sv" id="hs-winrate" style="color:var(--yellow)">0%</div><div class="sl">Win Rate</div></div>
-      <div class="stat-box"><div class="sv" id="hs-invested" style="color:var(--blue)">$0</div><div class="sl">Invested</div></div>
+      <div class="stat-box"><div class="sv" id="hs-pnl" style="color:var(--green)">$0</div><div class="sl">Live P&L</div></div>
+      <div class="stat-box"><div class="sv" id="hs-invested" style="color:var(--blue)">$0</div><div class="sl">Total Spent</div></div>
       <div class="stat-box"><div class="sv" id="hs-roi" style="color:var(--purple)">0%</div><div class="sl">ROI</div></div>
+      <div class="stat-box"><div class="sv" id="hs-wins" style="color:var(--green)">0</div><div class="sl">Up</div></div>
+      <div class="stat-box"><div class="sv" id="hs-losses" style="color:var(--red)">0</div><div class="sl">Down</div></div>
+      <div class="stat-box"><div class="sv" id="hs-open" style="color:var(--yellow)">0</div><div class="sl">Flat/Open</div></div>
+      <div class="stat-box"><div class="sv" id="hs-winrate" style="color:var(--yellow)">—</div><div class="sl">Win Rate</div></div>
     </div>
     <div id="hist-chart-wrap" style="display:none;margin-bottom:12px;">
       <svg id="hist-svg" width="100%" height="160" viewBox="0 0 800 160"></svg>
@@ -2162,7 +2163,12 @@ function updateCash(val) {
 }
 
 // ── HISTORY ────────────────────────────────────────────────────────────────
-var _historyRows = [];  // parsed trade rows from CSV
+// Kalshi trade CSV columns (Recent Activity / Trade export):
+//   type, Status, Amount_In_Dollars, Original_Date, Traded_Time,
+//   Fee_In_Dollars, Market_Ticker, Direction, Price_In_Cents,
+//   Result, Profit_In_Dollars  (Result/Profit empty = position still open)
+var _historyTrades  = [];   // raw parsed fills
+var _historyGrouped = {};   // grouped by ticker
 
 function loadHistoryCSV(event) {
   var file = event.target.files[0];
@@ -2186,194 +2192,265 @@ function loadHistoryCSV(event) {
         return fields;
       }
 
-      var headers = parseCSVLine(lines[0]).map(function(h) {
-        return h.replace(/"/g,'').toLowerCase().replace(/[^a-z]/g,'');
+      // Normalise header names: lowercase, strip non-alpha
+      var rawHeaders = parseCSVLine(lines[0]).map(function(h) {
+        return h.replace(/"/g,'').trim();
+      });
+      var normHeaders = rawHeaders.map(function(h) {
+        return h.toLowerCase().replace(/[^a-z]/g,'');
       });
 
-      function col(vals, name) {
-        var idx = headers.indexOf(name);
-        return (idx >= 0 && vals[idx]) ? vals[idx].replace(/"/g,'').trim() : '';
+      function col(vals, norm) {
+        var idx = normHeaders.indexOf(norm);
+        return idx >= 0 ? (vals[idx]||'').replace(/"/g,'').trim() : '';
       }
-      function parseMoney(s) {
-        var n = parseFloat(s.replace(/[^0-9.\-]/g,''));
-        return isNaN(n) ? 0 : n;
-      }
+      function num(s) { var n = parseFloat(s.replace(/[^0-9.\-]/g,'')); return isNaN(n) ? 0 : n; }
 
-      var rows = [];
+      var trades = [];
       for (var i = 1; i < lines.length; i++) {
         if (!lines[i].trim()) continue;
-        var vals = parseCSVLine(lines[i]);
-        var ticker    = col(vals,'marketticker'); if (!ticker) continue;
-        var closeDate = col(vals,'closedate');
-        var posStr    = col(vals,'position');
-        var exposure  = parseMoney(col(vals,'exposure'));
-        var returns   = parseMoney(col(vals,'totalreturns'));
-        var locked    = parseMoney(col(vals,'lockedinreturns'));
-        var series    = col(vals,'seriestitle');
-        var market    = col(vals,'eventtitle') || col(vals,'markettitle') || ticker;
+        var vals   = parseCSVLine(lines[i]);
+        var type   = col(vals,'type');
+        if (type.toLowerCase() !== 'trade') continue;  // skip deposits etc
 
-        // Parse date from closeDate like "Sep 11, 2026 at 7:25am CDT"
-        var dateMatch = closeDate.match(/([A-Za-z]+ \d+,\s*\d{4})/);
-        var tradeDate = dateMatch ? new Date(dateMatch[1]) : null;
+        var ticker = col(vals,'marketticker');   if (!ticker) continue;
+        var date   = new Date(col(vals,'originaldate'));
+        var dir    = col(vals,'direction');      // "Yes" or "No"
+        var price  = num(col(vals,'priceincents'));  // cents paid per contract
+        var amount = num(col(vals,'amountindollars')); // total $ spent
+        var fee    = num(col(vals,'feeindollars'));
+        var result = col(vals,'result');         // "won"/"lost"/"" if open
+        var profit = num(col(vals,'profitindollars')); // settled P&L or 0
+        var mktTitle = col(vals,'markettitle') || ticker;
 
-        // P&L = lockedInReturns (settled) or totalReturns
-        var pnl = locked !== 0 ? locked : returns;
-
-        rows.push({
-          ticker:    ticker,
-          market:    market,
-          category:  series || 'Other',
-          date:      tradeDate,
-          dateStr:   tradeDate ? tradeDate.toISOString().slice(0,10) : '',
-          exposure:  exposure,
-          pnl:       pnl,
-          won:       pnl > 0
+        trades.push({
+          ticker: ticker, title: mktTitle, date: date,
+          dateStr: date.toISOString().slice(0,10),
+          direction: dir, price: price,
+          amount: amount, fee: fee,
+          result: result, profit: profit,
+          settled: result !== ''
         });
       }
 
-      _historyRows = rows;
+      _historyTrades = trades;
 
-      // Set default date range to span of data
-      var dates = rows.filter(function(r){ return r.date; }).map(function(r){ return r.date; });
-      if (dates.length) {
-        var minD = new Date(Math.min.apply(null, dates));
-        var maxD = new Date(Math.max.apply(null, dates));
-        var fromEl = document.getElementById('hist-from');
-        var toEl   = document.getElementById('hist-to');
-        if (fromEl) fromEl.value = minD.toISOString().slice(0,10);
-        if (toEl)   toEl.value   = maxD.toISOString().slice(0,10);
-      }
+      // Group fills by ticker
+      var grouped = {};
+      trades.forEach(function(t) {
+        if (!grouped[t.ticker]) {
+          grouped[t.ticker] = {
+            ticker: t.ticker, title: t.title,
+            direction: t.direction,
+            fills: [], totalCost: 0, totalFees: 0,
+            settled: t.settled, result: t.result, profit: t.profit,
+            firstDate: t.date, lastDate: t.date
+          };
+        }
+        var g = grouped[t.ticker];
+        g.fills.push(t);
+        g.totalCost  += t.amount;
+        g.totalFees  += t.fee;
+        if (t.date < g.firstDate) g.firstDate = t.date;
+        if (t.date > g.lastDate)  g.lastDate  = t.date;
+        // If any fill is settled, use last known profit
+        if (t.settled) { g.settled = true; g.result = t.result; g.profit = t.profit; }
+      });
+      _historyGrouped = grouped;
 
-      showToast('\u2705 Loaded ' + rows.length + ' trades — click Analyze Range');
-      filterHistory();
+      // Set date range pickers to span of data
+      var allDates = trades.map(function(t){ return t.date; });
+      var minD = new Date(Math.min.apply(null, allDates));
+      var maxD = new Date(Math.max.apply(null, allDates));
+      var fromEl = document.getElementById('hist-from');
+      var toEl   = document.getElementById('hist-to');
+      if (fromEl) fromEl.value = minD.toISOString().slice(0,10);
+      if (toEl)   toEl.value   = maxD.toISOString().slice(0,10);
+
+      var tcount = Object.keys(grouped).length;
+      showToast('\u2705 ' + trades.length + ' fills across ' + tcount + ' positions — fetching live prices...');
+
+      // Auto-fetch live prices then render
+      filterHistory(true);
+
     } catch(err) {
-      showToast('\u274c CSV parse error: ' + err.message);
-      console.error(err);
+      showToast('\u274c Parse error: ' + err.message);
+      console.error('loadHistoryCSV:', err);
     }
   };
   reader.readAsText(file);
   event.target.value = '';
 }
 
-function filterHistory() {
+function filterHistory(fetchPrices) {
   var fromEl = document.getElementById('hist-from');
   var toEl   = document.getElementById('hist-to');
   var fromD  = fromEl && fromEl.value ? new Date(fromEl.value) : null;
   var toD    = toEl   && toEl.value   ? new Date(toEl.value + 'T23:59:59') : null;
 
-  var rows = _historyRows.filter(function(r) {
-    if (!r.date) return true; // include undated
-    if (fromD && r.date < fromD) return false;
-    if (toD   && r.date > toD)   return false;
+  // Filter grouped positions by date of first fill
+  var positions = Object.values(_historyGrouped).filter(function(g) {
+    if (fromD && g.firstDate < fromD) return false;
+    if (toD   && g.firstDate > toD)   return false;
     return true;
   });
 
-  if (!rows.length) {
-    document.getElementById('hist-table').innerHTML =
-      '<div style="text-align:center;padding:30px;color:var(--dim);">No trades in range — upload a CSV first</div>';
-    document.getElementById('hist-summary').style.display = 'none';
-    document.getElementById('hist-chart-wrap').style.display = 'none';
+  var tableEl   = document.getElementById('hist-table');
+  var summaryEl = document.getElementById('hist-summary');
+  var chartEl   = document.getElementById('hist-chart-wrap');
+
+  if (!positions.length) {
+    tableEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--dim);">No trades in range — upload a trade CSV first</div>';
+    summaryEl.style.display = 'none';
+    chartEl.style.display   = 'none';
     return;
   }
 
-  // ── Stats ────────────────────────────────────────────────────────────
-  var totalPnl   = 0, totalInv = 0, wins = 0, losses = 0;
-  rows.forEach(function(r) {
-    totalPnl += r.pnl;
-    totalInv += r.exposure;
-    if (r.pnl > 0) wins++;
-    else if (r.pnl < 0) losses++;
+  // If we should fetch live prices first, do that then re-render
+  if (fetchPrices) {
+    var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+    if (proxy) {
+      fetch(proxy + '/kalshi-all')
+        .then(function(r){ return r.json(); })
+        .then(function(d) {
+          var pm = {};
+          (d.markets||[]).forEach(function(m){ if (m.ticker) pm[m.ticker] = m; });
+          // Attach live price to each grouped position
+          Object.values(_historyGrouped).forEach(function(g) {
+            var live = pm[g.ticker];
+            if (live) {
+              g.liveAsk = live.yes_ask;
+              g.liveBid = live.yes_bid;
+            }
+          });
+          renderHistoryTable(positions, fromD, toD);
+        })
+        .catch(function(){ renderHistoryTable(positions, fromD, toD); });
+      return;
+    }
+  }
+  renderHistoryTable(positions, fromD, toD);
+}
+
+function renderHistoryTable(positions, fromD, toD) {
+  var tableEl   = document.getElementById('hist-table');
+  var summaryEl = document.getElementById('hist-summary');
+  var chartEl   = document.getElementById('hist-chart-wrap');
+
+  // ── Compute P&L per position ──────────────────────────────────────────
+  // Settled: use Profit_In_Dollars
+  // Open: live_bid - avg_cost_cents * contracts / 100
+  var totalPnl = 0, totalInv = 0, wins = 0, losses = 0, open = 0;
+
+  positions.forEach(function(g) {
+    if (g.settled) {
+      g.pnl    = g.profit;
+      g.status = g.result === 'won' ? 'WON' : 'LOST';
+    } else if (g.liveAsk) {
+      // Avg cost = totalCost / sum_of_contracts — approximate from fills
+      var totalContracts = 0;
+      g.fills.forEach(function(f) {
+        if (f.price > 0) totalContracts += (f.amount * 100) / f.price;
+      });
+      totalContracts = Math.round(totalContracts);
+      var avgCost = totalContracts > 0 ? (g.totalCost * 100 / totalContracts) : 0;
+      var sellPrice = g.direction.toLowerCase() === 'yes' ? g.liveBid : (100 - g.liveAsk);
+      g.pnl    = ((sellPrice - avgCost) / 100) * totalContracts;
+      g.contracts = totalContracts;
+      g.avgCost   = avgCost;
+      g.status = 'OPEN';
+    } else {
+      g.pnl    = 0;
+      g.status = 'OPEN';
+    }
+    totalPnl += g.pnl;
+    totalInv += g.totalCost;
+    if (g.pnl > 0.001) wins++;
+    else if (g.pnl < -0.001) losses++;
+    else open++;
   });
-  var winRate = rows.length ? ((wins / rows.length) * 100).toFixed(0) : 0;
+
+  var winRate = (wins + losses) > 0 ? ((wins / (wins+losses)) * 100).toFixed(0) : '—';
   var roi     = totalInv > 0 ? ((totalPnl / totalInv) * 100).toFixed(1) : '0.0';
 
-  function setEl(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
-  function setCol(id, v) { var el = document.getElementById(id); if (el) el.style.color = v >= 0 ? 'var(--green)' : 'var(--red)'; }
-
-  setEl('hs-pnl',      (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2));
+  function setEl(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; }
+  function setCol(id,v){ var el=document.getElementById(id); if(el) el.style.color=parseFloat(v)>=0?'var(--green)':'var(--red)'; }
+  setEl('hs-pnl',      (totalPnl>=0?'+':'')+'$'+totalPnl.toFixed(2));
   setEl('hs-wins',     wins);
   setEl('hs-losses',   losses);
-  setEl('hs-winrate',  winRate + '%');
-  setEl('hs-invested', '$' + totalInv.toFixed(2));
-  setEl('hs-roi',      (roi >= 0 ? '+' : '') + roi + '%');
+  setEl('hs-open',     open);
+  setEl('hs-winrate',  winRate+'%');
+  setEl('hs-invested', '$'+totalInv.toFixed(2));
+  setEl('hs-roi',      (roi>=0?'+':'')+roi+'%');
   setCol('hs-pnl', totalPnl);
   setCol('hs-roi', parseFloat(roi));
-  document.getElementById('hist-summary').style.display = '';
+  summaryEl.style.display = '';
 
-  // ── Cumulative P&L chart ─────────────────────────────────────────────
-  var sorted = rows.filter(function(r){ return r.date; })
-    .sort(function(a,b){ return a.date - b.date; });
-
-  if (sorted.length > 1) {
-    var cumulative = [], running = 0;
-    sorted.forEach(function(r) {
-      running += r.pnl;
-      cumulative.push({ date: r.dateStr, val: running });
-    });
-
-    var W = 800, H = 140, PAD = 35;
-    var vals = cumulative.map(function(p){ return p.val; });
-    var minV = Math.min(0, Math.min.apply(null, vals));
-    var maxV = Math.max(0, Math.max.apply(null, vals));
+  // ── Cumulative P&L mini-chart by date ────────────────────────────────
+  var byDate = {};
+  positions.forEach(function(g) {
+    var ds = g.firstDate.toISOString().slice(0,10);
+    byDate[ds] = (byDate[ds]||0) + g.pnl;
+  });
+  var dateKeys = Object.keys(byDate).sort();
+  if (dateKeys.length > 1) {
+    var W=800, H=130, PAD=38;
+    var cumPts = [], running = 0;
+    dateKeys.forEach(function(ds) { running += byDate[ds]; cumPts.push({ds:ds, val:running}); });
+    var vals  = cumPts.map(function(p){return p.val;});
+    var minV  = Math.min(0, Math.min.apply(null,vals));
+    var maxV  = Math.max(0, Math.max.apply(null,vals));
     var range = maxV - minV || 1;
-    var n = cumulative.length;
-
-    var pts = cumulative.map(function(p, i) {
-      var x = (PAD + (i / (n-1)) * (W - PAD*2)).toFixed(1);
-      var y = (PAD + (1 - (p.val - minV) / range) * (H - PAD*2)).toFixed(1);
-      return x + ',' + y;
+    var n     = cumPts.length;
+    var pts   = cumPts.map(function(p,i){
+      var x = (PAD + (i/(n-1))*(W-PAD*2)).toFixed(1);
+      var y = (PAD + (1-(p.val-minV)/range)*(H-PAD*2)).toFixed(1);
+      return x+','+y;
     });
-
-    var zeroY = (PAD + (1 - (0 - minV) / range) * (H - PAD*2)).toFixed(1);
-    var lastPt = pts[pts.length-1];
-    var lastColor = running >= 0 ? '#3fb950' : '#f85149';
-
+    var zeroY  = (PAD + (1-(0-minV)/range)*(H-PAD*2)).toFixed(1);
+    var lc     = running >= 0 ? '#3fb950' : '#f85149';
+    var lastX  = pts[n-1].split(',')[0], lastY = pts[n-1].split(',')[1];
+    document.getElementById('hist-svg').setAttribute('viewBox','0 0 '+W+' '+H);
     document.getElementById('hist-svg').innerHTML =
-      '<defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">' +
-        '<stop offset="0%" stop-color="' + lastColor + '" stop-opacity="0.3"/>' +
-        '<stop offset="100%" stop-color="' + lastColor + '" stop-opacity="0.02"/>' +
-      '</linearGradient></defs>' +
-      // Zero line
-      '<line x1="' + PAD + '" y1="' + zeroY + '" x2="' + (W-PAD) + '" y2="' + zeroY +
-        '" stroke="#ffffff20" stroke-width="1" stroke-dasharray="4,4"/>' +
-      '<text x="' + (PAD-4) + '" y="' + (parseFloat(zeroY)+4) + '" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">$0</text>' +
-      // Fill
-      '<polygon points="' + PAD + ',' + zeroY + ' ' + pts.join(' ') + ' ' + (W-PAD) + ',' + zeroY + '" fill="url(#hg)"/>' +
-      // Line
-      '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + lastColor + '" stroke-width="2" stroke-linejoin="round"/>' +
-      // Start/end labels
-      '<text x="' + PAD + '" y="' + (H+2) + '" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">' + cumulative[0].date + '</text>' +
-      '<text x="' + (W-PAD) + '" y="' + (H+2) + '" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">' + cumulative[n-1].date + '</text>' +
-      // Final value dot
-      '<circle cx="' + pts[n-1].split(',')[0] + '" cy="' + pts[n-1].split(',')[1] + '" r="4" fill="' + lastColor + '"/>' +
-      '<text x="' + (parseFloat(pts[n-1].split(',')[0])+6) + '" y="' + (parseFloat(pts[n-1].split(',')[1])-5) + '" fill="' + lastColor + '" font-size="10" font-family="IBM Plex Mono,monospace" font-weight="bold">' +
-        (running >= 0 ? '+' : '') + '$' + running.toFixed(2) + '</text>';
-
-    document.getElementById('hist-chart-wrap').style.display = '';
+      '<defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">'+
+        '<stop offset="0%" stop-color="'+lc+'" stop-opacity="0.3"/>'+
+        '<stop offset="100%" stop-color="'+lc+'" stop-opacity="0.02"/>'+
+      '</linearGradient></defs>'+
+      '<line x1="'+PAD+'" y1="'+zeroY+'" x2="'+(W-PAD)+'" y2="'+zeroY+'" stroke="#ffffff18" stroke-width="1" stroke-dasharray="4,3"/>'+
+      '<text x="'+(PAD-4)+'" y="'+(parseFloat(zeroY)+4)+'" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">$0</text>'+
+      '<polygon points="'+PAD+','+zeroY+' '+pts.join(' ')+' '+(W-PAD)+','+zeroY+'" fill="url(#hg)"/>'+
+      '<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+lc+'" stroke-width="2" stroke-linejoin="round"/>'+
+      '<circle cx="'+lastX+'" cy="'+lastY+'" r="4" fill="'+lc+'"/>'+
+      '<text x="'+(parseFloat(lastX)+6)+'" y="'+(parseFloat(lastY)-5)+'" fill="'+lc+'" font-size="10" font-family="IBM Plex Mono,monospace" font-weight="bold">'+(running>=0?'+':'')+'$'+running.toFixed(2)+'</text>'+
+      '<text x="'+PAD+'" y="'+(H-4)+'" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">'+dateKeys[0]+'</text>'+
+      '<text x="'+(W-PAD)+'" y="'+(H-4)+'" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">'+dateKeys[n-1]+'</text>';
+    chartEl.style.display = '';
+  } else {
+    chartEl.style.display = 'none';
   }
 
-  // ── Trade table ──────────────────────────────────────────────────────
-  var tableRows = rows.slice().sort(function(a,b){
-    return (b.date||0) - (a.date||0);
-  });
-
-  document.getElementById('hist-table').innerHTML =
-    '<div style="display:grid;grid-template-columns:90px 1fr 80px 80px 70px;gap:4px;margin-top:8px;">' +
-    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;">DATE</div>' +
-    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;">MARKET</div>' +
-    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;text-align:right;">INVESTED</div>' +
-    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;text-align:right;">P&L</div>' +
-    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;text-align:right;">RESULT</div>' +
-    tableRows.map(function(r) {
-      var pnlColor = r.pnl > 0 ? 'var(--green)' : r.pnl < 0 ? 'var(--red)' : 'var(--mid)';
-      var result   = r.pnl > 0 ? '\u2705 WIN' : r.pnl < 0 ? '\u274c LOSS' : '\u2796 PUSH';
-      var bg       = r.pnl > 0 ? 'rgba(63,185,80,0.06)' : r.pnl < 0 ? 'rgba(248,81,73,0.06)' : 'transparent';
-      return '<div style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;padding:6px;color:var(--dim);background:' + bg + ';border-radius:4px 0 0 4px;">' + (r.dateStr||'—') + '</div>' +
-             '<div style="font-size:0.75rem;padding:6px;color:var(--text);background:' + bg + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + r.market + '">' + r.market + '</div>' +
-             '<div style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;padding:6px;text-align:right;color:var(--dim);background:' + bg + ';">$' + r.exposure.toFixed(2) + '</div>' +
-             '<div style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;padding:6px;text-align:right;color:' + pnlColor + ';background:' + bg + ';font-weight:700;">' + (r.pnl >= 0 ? '+' : '') + '$' + r.pnl.toFixed(2) + '</div>' +
-             '<div style="font-size:0.72rem;padding:6px;text-align:right;color:' + pnlColor + ';background:' + bg + ';border-radius:0 4px 4px 0;">' + result + '</div>';
-    }).join('') + '</div>';
+  // ── Position table ────────────────────────────────────────────────────
+  var sorted = positions.slice().sort(function(a,b){ return b.firstDate - a.firstDate; });
+  tableEl.innerHTML =
+    '<div style="display:grid;grid-template-columns:90px 1fr 60px 70px 80px 60px;gap:3px;margin-top:8px;">' +
+    ['DATE','MARKET','DIR','SPENT','LIVE P&L','STATUS'].map(function(h){
+      return '<div style="font-size:0.67rem;font-weight:800;color:var(--mid);padding:4px 6px;">'+h+'</div>';
+    }).join('') +
+    sorted.map(function(g) {
+      var pc = g.pnl > 0.001 ? 'var(--green)' : g.pnl < -0.001 ? 'var(--red)' : 'var(--mid)';
+      var bg = g.pnl > 0.001 ? 'rgba(63,185,80,0.06)' : g.pnl < -0.001 ? 'rgba(248,81,73,0.06)' : 'transparent';
+      var sc = g.status==='WON'?'var(--green)':g.status==='LOST'?'var(--red)':'var(--yellow)';
+      var pnlStr = g.status==='OPEN' && !g.liveAsk ? '—' : (g.pnl>=0?'+':'')+'$'+g.pnl.toFixed(2);
+      var liveInfo = g.liveAsk ? ' · live='+g.liveAsk+'¢' : '';
+      return '<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;padding:5px 6px;color:var(--dim);background:'+bg+';border-radius:4px 0 0 4px;">'+g.firstDate.toISOString().slice(0,10)+'</div>'+
+             '<div style="font-size:0.74rem;padding:5px 6px;color:var(--text);background:'+bg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+g.ticker+'">'+g.ticker+(g.fills.length>1?' ('+g.fills.length+' fills)':'')+'</div>'+
+             '<div style="font-family:IBM Plex Mono,monospace;font-size:0.74rem;padding:5px 6px;text-align:center;color:var(--'+( g.direction.toLowerCase()==='yes'?'green':'red')+')" ;background:'+bg+';">'+g.direction.toUpperCase()+'</div>'+
+             '<div style="font-family:IBM Plex Mono,monospace;font-size:0.74rem;padding:5px 6px;text-align:right;color:var(--dim);background:'+bg+';">$'+g.totalCost.toFixed(2)+'</div>'+
+             '<div style="font-family:IBM Plex Mono,monospace;font-size:0.74rem;padding:5px 6px;text-align:right;color:'+pc+';background:'+bg+';font-weight:700;">'+pnlStr+'</div>'+
+             '<div style="font-size:0.7rem;padding:5px 6px;text-align:center;color:'+sc+';background:'+bg+';border-radius:0 4px 4px 0;font-weight:700;">'+g.status+'</div>';
+    }).join('') +
+    '</div>' +
+    '<div style="font-size:0.68rem;color:var(--dim);margin-top:8px;text-align:center;">Live P&L = current sell price vs your avg cost · Open positions show unrealised value</div>';
 }
 
 // ── PAGE INIT — runs once on load ─────────────────────────────────────────
