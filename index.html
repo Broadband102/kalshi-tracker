@@ -790,7 +790,9 @@ async function generatePlays() {
   // Fetch live markets from Worker
   let marketList = 'Could not load markets.';
   try {
-    const mresp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all');
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 8000); // 8 second timeout
+    const mresp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all', {signal: ctrl.signal});
     const mdata = await mresp.json();
     let markets = mdata.markets || [];
     // Sort by most contested (closest to 50¢) and cap at 60 total
