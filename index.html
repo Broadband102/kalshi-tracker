@@ -553,7 +553,7 @@ select.inp option { background: var(--card); }
     <div class="stat-box"><div class="sv" id="pt-invested" style="color:var(--blue)">$0</div><div class="sl">Invested</div></div>
     <div class="stat-box"><div class="sv" id="pt-pnl" style="color:var(--green)">$0.00</div><div class="sl">P&amp;L</div></div>
     <div class="stat-box"><div class="sv" id="pt-ret" style="color:var(--purple)">—</div><div class="sl">Return</div></div>
-    <div class="stat-box"><div class="sv" id="pt-count" style="color:var(--yellow)">0/10</div><div class="sl">Positions</div></div>
+    <div class="stat-box"><div class="sv" id="pt-count" style="color:var(--yellow)">0</div><div class="sl">Positions</div></div>
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
@@ -715,7 +715,7 @@ select.inp option { background: var(--card); }
   </div>
 </div>
 
-<script>// ── HARDCODED PROXY — change this URL if Worker address changes ──────────
+<script>// // ── HARDCODED PROXY — change this URL if Worker address changes ──────────
 window.KALSHI_PROXY = 'https://kalshi-proxy.duracraftboat.workers.dev';
 
 
@@ -1565,7 +1565,7 @@ function renderPositions() {
   setEl('pt-bankroll', '$' + bankroll.toFixed(2));
   setEl('pt-pnl',      (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2));
   setEl('pt-ret',      (totalPnl >= 0 ? '+' : '') + retPct + '%');
-  setEl('pt-count',    positions.length + '/10');
+  setEl('pt-count',    positions.length);
   // Sync cash input field
   var cashEl = document.getElementById('pt-cash-input');
   if (cashEl && document.activeElement !== cashEl) cashEl.value = cash.toFixed(2);
