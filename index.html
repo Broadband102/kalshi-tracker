@@ -375,7 +375,7 @@ function updateHero() {
   renderPositions();
 }
 
-function safeJSON(raw, fallback) {
+async function safeJSONraw, fallback) {
   if (!raw) return fallback;
   // Strip markdown code fences
   var cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
@@ -675,7 +675,7 @@ async function runMorningRoutine() {
   btn.disabled = true; btn.textContent = '⏳ Running...';
   progress.style.display = 'block';
 
-  function setStep(num, status, text) {
+  async function setStep(num, status, text) {
     var el = document.getElementById('mstep-' + num);
     if (!el) return;
     var icons = {done:'✅', active:'⏳', wait:'⏸', err:'❌'};
@@ -961,10 +961,8 @@ function renderPositions() {
         <button onclick="removePosition(${i})" style="font-size:0.65rem;padding:5px 9px;background:transparent;color:#484f58;border:1px solid #21262d;border-radius:4px;cursor:pointer;font-family:DM Mono,monospace;">✕</button>
       </div>
     </div>`;
-  }).join('');
-}
-
-function removePosition(i) {
+  }).join(''
+async function removePositiontion(i) {
   S.positions.splice(i, 1);
   saveState();
   renderPositions();
