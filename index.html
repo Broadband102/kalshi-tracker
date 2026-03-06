@@ -1154,62 +1154,116 @@ async function runBrief() {
 
 // ═══ PLAYS ═══
 async function generatePlays() {
-  const btn = document.getElementById('btn-plays');
+  var btn = document.getElementById('btn-plays');
   btn.disabled = true;
-  btn.textContent = '⟳ Building plays...';
-  const container = document.getElementById('plays-out');
-  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:12px;"><div class="spinner"></div> AI building stratified 10-play sheet...</div>';
+  btn.textContent = '\u29d7 Loading live prices...';
+  var container = document.getElementById('plays-out');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:12px;"><div class="spinner"></div> Fetching live Kalshi prices...</div>';
 
-  let marketList = '';
+  // ── Step 1: Fetch live markets from Kalshi via Worker ─────────────────
+  var markets = [];
   try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 8000);
-    const mr = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all', {signal: ctrl.signal});
-    const md = await mr.json();
-    let markets = (md.markets||[]).filter(m => { const p = m.yes_ask||0; return p >= 10 && p <= 90; }).slice(0, 60);
-    marketList = markets.map((m,i) => `${i+1}. [${m.ticker}] ${m.title||''} | YES:${m.yes_ask||'?'}¢`).join('\n');
-  } catch(e) { marketList = 'Could not load markets.'; }
+    var ctrl = new AbortController();
+    setTimeout(function() { ctrl.abort(); }, 10000);
+    var mr  = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all', {signal: ctrl.signal});
+    var md  = await mr.json();
 
+    // Filter: tradeable range, has real bid/ask spread
+    markets = (md.markets || []).filter(function(m) {
+      var ask = m.yes_ask || 0;
+      var bid = m.yes_bid || 0;
+      return ask >= 10 && ask <= 90 && bid > 0;
+    });
+
+    // Sort by most liquid (volume desc) then closest to 50¢
+    markets.sort(function(a, b) {
+      var volDiff = (b.volume || 0) - (a.volume || 0);
+      if (Math.abs(volDiff) > 50) return volDiff;
+      return Math.abs((a.yes_ask||50) - 50) - Math.abs((b.yes_ask||50) - 50);
+    });
+
+    markets = markets.slice(0, 60);
+  } catch(e) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--red);">Failed to load live market data: ' + e.message + '</div>';
+    btn.disabled = false; btn.textContent = '\u26a1 Generate Plays';
+    return;
+  }
+
+  if (!markets.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);">No tradeable markets found</div>';
+    btn.disabled = false; btn.textContent = '\u26a1 Generate Plays';
+    return;
+  }
+
+  btn.textContent = '\u29d7 AI analyzing ' + markets.length + ' markets...';
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:12px;"><div class="spinner"></div> AI finding edge plays...</div>';
+
+  // ── Step 2: Build market list for AI ──────────────────────────────────
+  // Include yes_ask (buy price), yes_bid (sell price), spread, volume
+  // AI MUST use yes_ask as entryTarget — no making up prices
+  var marketList = markets.map(function(m, i) {
+    var ask    = m.yes_ask || 0;
+    var bid    = m.yes_bid || 0;
+    var spread = ask - bid;
+    var vol    = m.volume || 0;
+    return (i+1) + '. [' + m.ticker + '] ' + (m.title||'') +
+           ' | BUY=' + ask + '\u00a2 SELL=' + bid + '\u00a2 SPREAD=' + spread + '\u00a2 VOL=' + vol;
+  }).join('\n');
+
+  // ── Step 3: Call Claude ────────────────────────────────────────────────
   try {
-    const today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
-    const resp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev', {
+    var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    var resp  = await fetch('https://kalshi-proxy.duracraftboat.workers.dev', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2000,
-        messages: [{ role: 'user', content:
-          `Today is ${today}. You are a Kalshi prediction market analyst finding HIGH-EDGE plays.\n\n` +
-          `BANKROLL: $${S.bank}. Tier1=$${(S.bank*0.12).toFixed(0)} Tier2=$${(S.bank*0.10).toFixed(0)} Tier3=$${(S.bank*0.06).toFixed(0)}\n\n` +
-          `LIVE KALSHI MARKETS:\n${marketList}\n\n` +
-          `Return 5-10 high-edge plays as a JSON array. STRICT RULES:
-- Only plays where |fairValue - entryTarget| >= 15 cents edge
-- MAX 2 plays from same series ticker prefix (e.g. only 2 KXFED, only 2 KXTRUMPSAY)
-- MUST include plays from AT LEAST 3 different categories
-- Priority order: Economics, Politics, Crypto, Geopolitics, Climate — spread evenly
-- If Economics dominates the market list, still cap Economics at 4 plays max
-- Prefer longer-horizon markets (months out) over short-term\n\n` +
-          `Respond with ONLY a raw JSON array, no markdown fences, no other text:\n` +
-          `[{"num":1,"market":"title","ticker":"KXTICKER","category":"Economics","direction":"YES","entryTarget":35,"fairValue":55,"edge":20,"confidence":72,"tier":1,"size":12,"reason":"one sentence","risk":"LOW","expiryEst":"Apr 28"}]`
+        messages: [{role: 'user', content:
+          'Today is ' + today + '. You are a Kalshi prediction market analyst.\n\n' +
+          'BANKROLL: $' + S.bank + ' | Tier1=$' + (S.bank*0.12).toFixed(0) + ' Tier2=$' + (S.bank*0.10).toFixed(0) + ' Tier3=$' + (S.bank*0.06).toFixed(0) + '\n\n' +
+          'LIVE KALSHI MARKETS (real-time prices from Kalshi API):\n' +
+          'Format: [TICKER] title | BUY=yes_ask SELL=yes_bid SPREAD=ask-bid VOL=volume\n' +
+          'BUY price = what you pay to buy YES right now (this is the real market price)\n\n' +
+          marketList + '\n\n' +
+          'Find 5-10 HIGH-EDGE plays. CRITICAL RULES:\n' +
+          '- entryTarget MUST equal the exact BUY price shown above (do not change it)\n' +
+          '- fairValue is YOUR assessment of true probability in cents\n' +
+          '- edge = fairValue - entryTarget (must be >= 12 for inclusion)\n' +
+          '- Only include if spread <= 20 (liquid market)\n' +
+          '- MAX 2 plays per series prefix (max 2 KXFED, max 2 KXCPI, etc.)\n' +
+          '- MUST span at least 3 different categories\n' +
+          '- Prefer markets expiring 30+ days out\n\n' +
+          'Respond with ONLY a raw JSON array, no markdown, no commentary:\n' +
+          '[{"num":1,"market":"full title","ticker":"KXTICKER","category":"Economics",' +
+          '"direction":"YES","entryTarget":35,"fairValue":52,"edge":17,"confidence":74,' +
+          '"tier":1,"size":12,"reason":"one sentence why market is mispriced","risk":"LOW",' +
+          '"expiryEst":"Jun 2026"}]'
         }]
       })
     });
-    const data = await resp.json();
-    const raw = (data.content||[]).map(b => b.type === 'text' ? b.text : '').join('');
 
-    const clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const s = clean.indexOf('[');
-    const e = clean.lastIndexOf(']');
-    if (s < 0 || e < 0) throw new Error('No JSON array found in response');
-    const plays = JSON.parse(clean.slice(s, e+1));
+    var data  = await resp.json();
+    var raw   = (data.content || []).map(function(b) { return b.type === 'text' ? b.text : ''; }).join('');
+    var clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    var s     = clean.indexOf('[');
+    var e     = clean.lastIndexOf(']');
+    if (s < 0 || e < 0) throw new Error('No JSON array in response. Raw: ' + raw.slice(0, 200));
+
+    var plays = JSON.parse(clean.slice(s, e+1));
+    if (!plays.length) throw new Error('AI returned empty plays array');
+
     S.lastPlays = plays;
     saveState();
     renderPlayCards(plays);
+
   } catch(err) {
-    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--red);font-size:0.85rem;">Error: ${err.message}</div>`;
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--red);font-size:0.85rem;">Error: ' + err.message + '</div>';
+    console.error('generatePlays error:', err);
   }
+
   btn.disabled = false;
-  btn.textContent = '⚡ Generate Plays';
+  btn.textContent = '\u26a1 Generate Plays';
 }
 
 
@@ -1244,136 +1298,156 @@ function importPortfolio(event) {
     try {
       var text = e.target.result;
 
-      // ── JSON ──
-      if (file.name.endsWith('.json')) {
+      // ── JSON ──────────────────────────────────────────────
+      if (file.name.toLowerCase().endsWith('.json')) {
         var data = JSON.parse(text);
-        var positions = Array.isArray(data) ? data : (data.positions || []);
-        S.positions = (S.positions || []).concat(positions);
+        var arr = Array.isArray(data) ? data : (data.positions || []);
+        S.positions = (S.positions || []).concat(arr);
         saveState(); updateHero(); renderPositions(); showTab('portfolio');
-        showToast('\u2705 Imported ' + positions.length + ' positions');
+        showToast('\u2705 Imported ' + arr.length + ' positions');
         return;
       }
 
-      // ── KALSHI CSV ──
-      // Columns: marketTicker, seriesTitle, eventTitle, marketTitle, closeDate,
-      //          volume, yesPrice, noPrice, lastTradePrice, position, averagePrice,
-      //          exposure, positionReturns, lockedInReturns, totalReturns
-      var rawLines = text.replace(/\r/g, '').split('\n');
-      var headerLine = rawLines[0].replace(/^\uFEFF/, '').replace(/"/g, '');
-      var headers = headerLine.split(',').map(function(h) {
-        return h.trim().toLowerCase().replace(/[^a-z]/g, '');
-      });
+      // ── KALSHI CSV ────────────────────────────────────────
+      // Expected columns (Kalshi portfolio export):
+      //   marketTicker | seriesTitle | eventTitle | marketTitle | closeDate
+      //   volume | yesPrice | noPrice | lastTradePrice | position
+      //   averagePrice | exposure | positionReturns | lockedInReturns | totalReturns
+      var lines = text.replace(/\r/g, '').split('\n');
 
-      function col(vals, name) {
-        var idx = headers.indexOf(name);
-        return idx >= 0 ? vals[idx].trim().replace(/^"|"$/g, '') : '';
+      // Parse header — strip BOM, quotes, lowercase
+      var headers = lines[0]
+        .replace(/^\uFEFF/, '')
+        .split(',')
+        .map(function(h) { return h.trim().replace(/"/g, '').toLowerCase(); });
+
+      // Helper: get cell value by column name (exact lowercase match)
+      function cell(vals, colName) {
+        var idx = headers.indexOf(colName);
+        if (idx < 0) return '';
+        return (vals[idx] || '').trim().replace(/"/g, '');
       }
-      function parseMoney(s) {
-        return parseFloat(s.replace(/[$¢,+]/g, '')) || 0;
-      }
+
+      // Strip currency symbols and parse number
+      function money(s) { return parseFloat(s.replace(/[^0-9.\-]/g, '')) || 0; }
 
       var positions = [];
-      for (var i = 1; i < rawLines.length; i++) {
-        var vals = rawLines[i].split(',');
+      for (var i = 1; i < lines.length; i++) {
+        var vals = lines[i].split(',');
         if (!vals[0] || !vals[0].trim()) continue;
 
-        var ticker    = col(vals, 'marketticker');
-        var series    = col(vals, 'seriestitle');
-        var eventTtl  = col(vals, 'eventtitle');
-        var mktTtl    = col(vals, 'markettitle');
-        var closeDate = col(vals, 'closedate');
-        var posStr    = col(vals, 'position');       // "Yes x 22"
-        var avgPrice  = col(vals, 'averageprice');   // "45¢"
-        var exposure  = col(vals, 'exposure');       // "$9.62" = actual $ invested
-        var yesPrice  = col(vals, 'yesprice');       // "48¢" = last price on site
-        var returns   = col(vals, 'positionreturns');// "+$0.56"
-
-        var posMatch  = posStr.match(/(Yes|No)\s*x\s*(\d+)/i);
-        var direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
-        var qty       = posMatch ? parseInt(posMatch[2]) : 0;
-        var entry     = parseMoney(avgPrice);   // cents
-        var invested  = parseMoney(exposure);   // dollars — Kalshi's real figure
-        var pnl       = parseMoney(returns);    // dollars
-        var lastPrice = parseMoney(yesPrice);   // cents
+        var ticker   = cell(vals, 'marketticker');   // KXCPI-26AUG-T0.2
+        var posStr   = cell(vals, 'position');        // "Yes x 22"
+        var avgPriceS= cell(vals, 'averageprice');    // "45¢"  → avg cost in cents
+        var exposureS= cell(vals, 'exposure');        // "$9.62" → actual $ invested
+        var returnS  = cell(vals, 'positionreturns'); // "+$0.56" → unrealised P&L in $
+        var yesPriceS= cell(vals, 'yesprice');        // "48¢"  → last price on site
+        var series   = cell(vals, 'seriestitle');     // "CPI"
+        var eventTtl = cell(vals, 'eventtitle');      // "CPI in August"
+        var mktTtl   = cell(vals, 'markettitle');     // "Above 0.2%"
+        var closeDate= cell(vals, 'closedate');       // "Sep 11, 2026..."
 
         if (!ticker) continue;
+
+        // Parse position string "Yes x 22" or "No x 5"
+        var posMatch  = posStr.match(/(yes|no)\s*x\s*(\d+)/i);
+        var direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
+        var qty       = posMatch ? parseInt(posMatch[2]) : 0;
+
+        // Parse numeric values
+        var avgCents  = money(avgPriceS);   // e.g. 45  (cents)
+        var invested  = money(exposureS);   // e.g. 9.62 (dollars) ← REAL amount spent
+        var pnl       = money(returnS);     // e.g. 0.56 (dollars) ← unrealised gain/loss
+        var lastCents = money(yesPriceS);   // e.g. 48  (cents) ← last traded
+
         positions.push({
           num:          Date.now() + i,
-          market:       eventTtl || mktTtl || ticker,
           ticker:       ticker,
+          market:       eventTtl || mktTtl || ticker,
           category:     series || 'Other',
           direction:    direction,
           qty:          qty,
-          entry:        entry,        // avg cost in cents
-          invested:     invested,     // actual $ spent (from Kalshi exposure field)
-          pnl:          pnl,          // $ P&L
-          currentPrice: lastPrice || entry,  // last traded price in cents
-          reason:       mktTtl || '',
+          avgCents:     avgCents,   // average entry price in cents
+          invested:     invested,   // ACTUAL dollars spent (from Kalshi exposure field)
+          pnl:          pnl,        // unrealised P&L in dollars
+          liveCents:    lastCents,  // last known price in cents (will refresh from API)
           added:        closeDate || new Date().toLocaleDateString(),
           url:          'https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]
         });
       }
 
-      if (!positions.length) { showToast('\u26a0\ufe0f No rows found'); return; }
-      S.positions = (S.positions || []).concat(positions);
+      if (!positions.length) { showToast('\u26a0\ufe0f No rows found — check CSV format'); return; }
+
+      // Clear old and replace (don't append — re-uploading same CSV doubles it)
+      S.positions = positions;
       saveState(); updateHero(); renderPositions(); showTab('portfolio');
-      showToast('\u2705 Imported ' + positions.length + ' Kalshi positions');
+      showToast('\u2705 Loaded ' + positions.length + ' positions · $' +
+        positions.reduce(function(a,p){ return a + p.invested; }, 0).toFixed(2) + ' invested');
+
     } catch(err) {
       showToast('\u274c Import failed: ' + err.message);
-      console.error(err);
+      console.error('importPortfolio error:', err);
     }
   };
   reader.readAsText(file);
   event.target.value = '';
 }
 function renderPositions() {
-  const list = document.getElementById('pos-list');
+  var list = document.getElementById('pos-list');
   if (!list) return;
-  const positions = S.positions || [];
+  var positions = S.positions || [];
 
-  // Update stats
-  let totalInvested = 0, totalPnl = 0;
-  positions.forEach(p => {
-    totalInvested += parseFloat(p.invested || p.exposure || p.size || 0) || 0;
-    totalPnl      += parseFloat(p.pnl || 0) || 0;
+  // ── Summary stats ──────────────────────────────────────
+  var totalInvested = 0, totalPnl = 0;
+  positions.forEach(function(p) {
+    totalInvested += p.invested || 0;
+    totalPnl      += p.pnl     || 0;
   });
-  const el = id => document.getElementById(id);
-  if (el('pt-invested')) el('pt-invested').textContent = '$' + totalInvested.toFixed(0);
-  if (el('pt-pnl')) { el('pt-pnl').textContent = (totalPnl>=0?'+':'') + '$' + totalPnl.toFixed(2); el('pt-pnl').style.color = totalPnl>=0?'var(--green)':'var(--red)'; }
-  if (el('pt-ret')) el('pt-ret').textContent = totalInvested>0 ? (totalPnl/totalInvested*100).toFixed(1)+'%' : '—';
-  if (el('pt-count')) el('pt-count').textContent = positions.length + '/10';
+  var retPct = totalInvested > 0 ? (totalPnl / totalInvested * 100).toFixed(1) : '0.0';
+
+  function setEl(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
+  function setColor(id, val) { var el = document.getElementById(id); if (el) el.style.color = val >= 0 ? 'var(--green)' : 'var(--red)'; }
+
+  setEl('pt-invested', '$' + totalInvested.toFixed(2));
+  setEl('pt-pnl',  (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2));
+  setEl('pt-ret',  (totalPnl >= 0 ? '+' : '') + retPct + '%');
+  setEl('pt-count', positions.length + '/10');
+  setColor('pt-pnl', totalPnl);
+  setColor('pt-ret', totalPnl);
 
   if (!positions.length) {
-    list.innerHTML = '<div style="text-align:center;padding:40px;color:#484f58;font-size:0.82rem;font-family:DM Mono,monospace;">NO POSITIONS — import CSV or add manually</div>';
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);font-size:0.85rem;">No positions — import your Kalshi CSV</div>';
     return;
   }
 
-  list.innerHTML = positions.map((p, i) => {
-    const pnl = parseFloat(p.pnl||0);
-    const pnlColor = pnl > 0 ? '#3fb950' : pnl < 0 ? '#f85149' : '#8b949e';
-    const pnlStr = (pnl>=0?'+':'') + '$' + pnl.toFixed(2);
-    const ticker = p.ticker || p.marketTicker || '';
-    const market = p.market || p.eventTitle || p.marketTitle || ticker;
-    const category = p.category || p.seriesTitle || 'Other';
-    const entry = parseFloat(p.entry||p.averagePrice||0);
-    const size = parseFloat(p.size||p.exposure||0);
-    const direction = p.direction || 'YES';
-    const qty = p.qty || '';
-    const url = p.url || ('https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]);
-    return `<div class="pos-row" style="border-left:3px solid ${pnl>=0?'var(--green)':'var(--red)'}">
-      <div>
-        <div class="pos-market">${market}</div>
-        <div class="pos-meta">${ticker} · ${category.toUpperCase()} · ${direction}${qty?' x'+qty:''} · avg ${entry}¢ → ${p.currentPrice||entry}¢ now · $${(parseFloat(p.invested||p.exposure||p.size||0)||0).toFixed(2)} in</div>
-      </div>
-      <div>
-        <div class="pos-pnl" style="color:${pnlColor}">${pnlStr}</div>
-        <div class="pos-pnl-lbl">P&amp;L</div>
-      </div>
-      <div style="display:flex;gap:6px;">
-        <a href="${url}" target="_blank" class="pbtn pbtn-buy" style="padding:6px 10px;font-size:0.72rem;">↗</a>
-        <button onclick="removePosition(${i})" class="pbtn pbtn-skip" style="padding:6px 10px;">✕</button>
-      </div>
-    </div>`;
+  list.innerHTML = positions.map(function(p, i) {
+    var pnlColor = p.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    var pnlStr   = (p.pnl >= 0 ? '+' : '') + '$' + (p.pnl || 0).toFixed(2);
+    var liveStr  = p.liveCents ? p.liveCents + '\u00a2' : p.avgCents + '\u00a2';
+    var avgStr   = p.avgCents  ? p.avgCents  + '\u00a2' : '?';
+    var moveStr  = p.liveCents && p.avgCents && p.liveCents !== p.avgCents
+                   ? ' \u2192 ' + liveStr + ' live'
+                   : '';
+    var accentColor = p.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    return '<div class="pos-row" style="border-left:3px solid ' + accentColor + '">' +
+      '<div>' +
+        '<div class="pos-market">' + (p.market || p.ticker) + '</div>' +
+        '<div class="pos-meta">' + p.ticker +
+          ' \u00b7 ' + (p.category||'').toUpperCase() +
+          ' \u00b7 ' + p.direction + (p.qty ? ' \u00d7' + p.qty : '') +
+          ' \u00b7 avg ' + avgStr + moveStr +
+          ' \u00b7 <strong style="color:var(--text)">$' + (p.invested||0).toFixed(2) + ' invested</strong>' +
+        '</div>' +
+      '</div>' +
+      '<div>' +
+        '<div class="pos-pnl" style="color:' + pnlColor + '">' + pnlStr + '</div>' +
+        '<div class="pos-pnl-lbl">unrealised P&amp;L</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;">' +
+        '<a href="' + p.url + '" target="_blank" class="pbtn pbtn-buy" style="padding:6px 10px;font-size:0.72rem;">\u2197</a>' +
+        '<button onclick="removePosition(' + i + ')" class="pbtn pbtn-skip" style="padding:6px 10px;">\u2715</button>' +
+      '</div>' +
+    '</div>';
   }).join('');
 }
 
@@ -1493,33 +1567,59 @@ function renderChecklist() {
 function toggleChk(i) { chkState[i] = !chkState[i]; renderChecklist(); }
 
 async function refreshAllPrices() {
-  const btn = document.getElementById('btn-refresh-prices');
-  if (btn) { btn.disabled = true; btn.textContent = '⟳ Refreshing...'; }
-  const positions = S.positions || [];
+  var btn = document.getElementById('btn-refresh-prices');
+  if (btn) { btn.disabled = true; btn.textContent = '\u29d7 Fetching live prices...'; }
+
+  var positions = S.positions || [];
   if (!positions.length) {
-    if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh Prices'; }
+    if (btn) { btn.disabled = false; btn.textContent = '\ud83d\udd04 Refresh Prices'; }
     showToast('No positions to refresh');
     return;
   }
-  let updated = 0;
-  // Fetch prices in parallel using Kalshi public API via Worker
-  await Promise.all(positions.map(async (pos, i) => {
-    const ticker = pos.ticker || pos.marketTicker || '';
+
+  var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  if (!proxy) { showToast('\u26a0\ufe0f Set proxy URL in Setup first'); return; }
+
+  var updated = 0, errors = 0;
+
+  // Fetch all prices in parallel from Kalshi public API via Worker
+  await Promise.all(positions.map(async function(pos, i) {
+    var ticker = pos.ticker || '';
     if (!ticker) return;
     try {
-      const r = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-price?ticker=' + encodeURIComponent(ticker));
-      const d = await r.json();
+      // Direct Kalshi public API — no auth needed for market data
+      var url = proxy + '/kalshi-price?ticker=' + encodeURIComponent(ticker);
+      var r   = await fetch(url);
+      var d   = await r.json();
+
       if (d.yes_ask != null) {
-        S.positions[i].currentPrice = d.yes_ask;  // yes_ask = live buy price
-        S.positions[i].lastRefreshed = new Date().toLocaleTimeString();
+        // yes_ask = current buy price in cents (what you'd pay right now)
+        S.positions[i].liveCents = d.yes_ask;
+
+        // Recalculate unrealised P&L:
+        // pnl = (live_price - avg_cost) / 100 * qty
+        var avg = S.positions[i].avgCents || 0;
+        var qty = S.positions[i].qty      || 0;
+        if (avg && qty) {
+          S.positions[i].pnl = ((d.yes_ask - avg) / 100) * qty;
+        }
         updated++;
+      } else {
+        errors++;
       }
-    } catch(e) { /* skip failed */ }
+    } catch(e) {
+      errors++;
+      console.warn('Price fetch failed for ' + ticker + ':', e.message);
+    }
   }));
+
   saveState();
   renderPositions();
-  if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh Prices'; }
-  showToast('✅ Updated ' + updated + ' prices');
+  if (btn) { btn.disabled = false; btn.textContent = '\ud83d\udd04 Refresh Prices'; }
+
+  var msg = '\u2705 ' + updated + ' prices updated';
+  if (errors) msg += ' (' + errors + ' failed)';
+  showToast(msg);
 }
 </script>
 </body>
