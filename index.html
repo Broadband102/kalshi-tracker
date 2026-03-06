@@ -714,7 +714,10 @@ select.inp option { background: var(--card); }
   </div>
 </div>
 
-<script>
+<script>// ── HARDCODED PROXY — change this URL if Worker address changes ──────────
+window.KALSHI_PROXY = 'https://kalshi-proxy.duracraftboat.workers.dev';
+
+
 // ═══ STATE ═══
 // ── Load persisted state from localStorage, merge with defaults ──────────
 var S_DEFAULTS = {
