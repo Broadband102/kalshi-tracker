@@ -842,10 +842,11 @@ async function parseMarket(m) {
   // Build deep URL: kalshi.com/markets/{series}/{event_ticker}
   // e.g. KXFED-27APR-T3.75 → event_ticker=KXFED-27APR → kalshi.com/markets/kxfed/kxfed-27apr
   var ticker     = m.ticker || '';
-  var eventTk    = m.event_ticker || ticker.split('-').slice(0,2).join('-');
+  var eventTk    = m.event_ticker || ticker.split('-').slice(0,-1).join('-');
   var series     = eventTk.split('-')[0].toLowerCase();
   var eventSlug  = eventTk.toLowerCase();
-  var deepUrl    = 'https://kalshi.com/markets/' + series + '/' + eventSlug;
+  var tickerSlug = ticker.toLowerCase();
+  var deepUrl    = 'https://kalshi.com/markets/' + series + '/' + eventSlug + '/' + tickerSlug;
 
   return {
     ticker:     ticker,
@@ -1342,9 +1343,12 @@ function renderPlayCards(plays) {
     const rc      = p.risk === 'LOW' ? '#3fb950' : p.risk === 'HIGH' ? '#f85149' : '#d29922';
     const expRet  = p.edge && p.entryTarget ? ((p.edge / p.entryTarget)*100).toFixed(1)+'%' : '';
     const series    = (p.ticker||'').split('-')[0].toLowerCase();
-    const deepUrl   = p.ticker
-      ? 'https://kalshi.com/markets/' + series + '/' + (p.ticker).toLowerCase()
-      : (p.url || 'https://kalshi.com/markets/');
+    // Kalshi URL: /markets/{series}/{event_ticker}/{market_ticker}
+    // Kalshi auto-redirects event_ticker slug to the pretty name — no lookup needed
+    // event_ticker = all ticker segments except the last (e.g. KXFED-26JUN-T3.50 → KXFED-26JUN)
+    const tickerLow  = (p.ticker||'').toLowerCase();
+    const eventLow   = (p.event_ticker||tickerLow.split('-').slice(0,-1).join('-')).toLowerCase();
+    const deepUrl    = 'https://kalshi.com/markets/' + series + '/' + eventLow + '/' + tickerLow;
     const seriesUrl = deepUrl;
 
     // ── Kelly Criterion ───────────────────────────────────────────────
@@ -2174,7 +2178,7 @@ function renderSportsMarkets(markets){
   if(!markets.length){el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);">No games closing within 30 minutes right now.</div>';return;}
   el.innerHTML=markets.map(function(m){
     var mins=m.minutes_to_close||0,cdClass=mins<=70?'countdown-urgent':mins<=100?'countdown-soon':'countdown-ok',cdLabel=mins+'m';
-    var series=(m.ticker||'').split('-')[0].toLowerCase(),deepUrl='https://kalshi.com/markets/'+series+'/'+m.ticker.toLowerCase();
+    var series=(m.ticker||'').split('-')[0].toLowerCase(),tickerLow=m.ticker.toLowerCase(),eventLow=tickerLow.split('-').slice(0,-1).join('-'),deepUrl='https://kalshi.com/markets/'+series+'/'+eventLow+'/'+tickerLow;
     return '<div class="sport-market-row">'
       +'<div style="flex:1;min-width:180px;"><div style="font-weight:700;font-size:0.84rem;color:var(--text);">'+(m.title||m.ticker)+'</div>'
       +'<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:var(--blue);margin-top:2px;">'+m.ticker+'</div>'
@@ -2206,7 +2210,9 @@ function renderSportsPosCards(positions,pm){
     var gain=entryC>0?((liveC-entryC)/entryC)*100:0,isFlash=gain>=15;
     var pnl=((liveC-entryC)/100)*(pos.qty||pos.quantity||1);
     var series=(pos.ticker||'').split('-')[0].toLowerCase();
-    var deepUrl='https://kalshi.com/markets/'+series+'/'+pos.ticker.toLowerCase();
+    var tickerLow2=pos.ticker.toLowerCase();
+    var eventLow2=tickerLow2.split('-').slice(0,-1).join('-');
+    var deepUrl='https://kalshi.com/markets/'+series+'/'+eventLow2+'/'+tickerLow2;
     var gc=isFlash?'#16a34a':gain>0?'var(--green)':'var(--red)';
     return '<div class="sport-pos-row'+(isFlash?' flash-win':'')+'">'
       +(isFlash?'<div style="font-size:1.1rem;margin-right:6px;">&#x1F7E2;</div>':'')
@@ -2219,6 +2225,143 @@ function renderSportsPosCards(positions,pm){
       +(isFlash?'<a href="'+deepUrl+'" target="_blank" style="display:inline-block;margin-top:4px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:5px;font-size:0.72rem;font-weight:700;text-decoration:none;">SELL NOW</a>':'')
       +'</div></div>';
   }).join('');
+}
+
+
+// ═══ PORTFOLIO ACTIONS ═══════════════════════════════════════════════════
+function addPosition() {
+  var name  = (document.getElementById('pf-name')  ||{}).value||'';
+  var dir   = (document.getElementById('pf-dir')   ||{}).value||'YES';
+  var cat   = (document.getElementById('pf-cat')   ||{}).value||'Other';
+  var entry = parseFloat((document.getElementById('pf-entry')||{}).value)||0;
+  var curr  = parseFloat((document.getElementById('pf-curr') ||{}).value)||0;
+  var qty   = parseInt(  (document.getElementById('pf-qty')  ||{}).value)||0;
+  var exp   = (document.getElementById('pf-exp')   ||{}).value||'';
+  var stop  = parseFloat((document.getElementById('pf-stop') ||{}).value)||0;
+  var thesis= (document.getElementById('pf-thesis')||{}).value||'';
+  if (!name) { showToast('\u26a0\ufe0f Enter a contract name'); return; }
+
+  // Build ticker from name if it looks like one, else use name as market label
+  var ticker = name.toUpperCase().replace(/[^A-Z0-9\-]/g,'') || ('CUSTOM-' + Date.now());
+
+  var invested = (entry / 100) * qty;
+  var pnl      = ((curr - entry) / 100) * qty;
+  var series   = ticker.split('-')[0].toLowerCase();
+
+  var pos = {
+    num:       Date.now(),
+    ticker:    ticker,
+    market:    name,
+    category:  cat,
+    direction: dir,
+    qty:       qty,
+    avgCents:  entry,
+    liveCents: curr || entry,
+    invested:  parseFloat(invested.toFixed(2)),
+    pnl:       parseFloat(pnl.toFixed(2)),
+    stopLoss:  stop || null,
+    thesis:    thesis,
+    added:     exp || new Date().toLocaleDateString(),
+    url:       'https://kalshi.com/markets/' + series + '/' + ticker.toLowerCase()
+  };
+
+  S.positions = S.positions || [];
+  S.positions.push(pos);
+  saveState(); updateHero(); renderPositions(); showTab('portfolio');
+
+  // Clear form
+  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-stop','pf-thesis'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  showToast('\u2705 Position added');
+}
+
+function exportCSV() {
+  var positions = S.positions || [];
+  if (!positions.length) { showToast('No positions to export'); return; }
+  var hdr = 'ticker,market,category,direction,qty,avgCents,liveCents,invested,pnl,added
+';
+  var rows = positions.map(function(p) {
+    return [p.ticker,'"'+(p.market||'').replace(/"/g,"''")+'"',p.category||'',
+            p.direction||'YES',p.qty||0,p.avgCents||0,p.liveCents||0,
+            (p.invested||0).toFixed(2),(p.pnl||0).toFixed(2),'"'+(p.added||'')+'"'].join(',');
+  }).join('\n');
+  var blob = new Blob([hdr+rows], {type:'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kalshi-positions-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  showToast('\u2705 CSV exported');
+}
+
+function exportJSON() {
+  var blob = new Blob([JSON.stringify({positions: S.positions||[], bank: S.bank, cash: S.cash, exported: new Date().toISOString()}, null, 2)], {type:'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kalshi-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  showToast('\u2705 JSON backup saved');
+}
+
+function exportPortfolio() { exportCSV(); }
+
+// ═══ SETUP ACTIONS ════════════════════════════════════════════════════════
+function copyCode() {
+  var workerUrl = 'https://raw.githubusercontent.com/Broadband102/kalshi-tracker/main/cloudflare-worker.js';
+  showToast('\u{1F4CB} Fetching worker code...');
+  fetch(workerUrl)
+    .then(function(r) { return r.text(); })
+    .then(function(code) {
+      return navigator.clipboard.writeText(code);
+    })
+    .then(function() { showToast('\u2705 Worker code copied to clipboard'); })
+    .catch(function() {
+      // Fallback: just copy the proxy URL
+      navigator.clipboard.writeText(window.KALSHI_PROXY || '').catch(function(){});
+      showToast('\u26a0\ufe0f Could not fetch — copy from GitHub manually');
+    });
+}
+
+function saveProxy() {
+  var val = (document.getElementById('proxy-input')||{}).value||'';
+  if (!val) { showToast('\u26a0\ufe0f Enter a URL first'); return; }
+  val = val.replace(/\/$/, '');
+  window.KALSHI_PROXY = val;
+  localStorage.setItem('kft-proxy', val);
+  showToast('\u2705 Proxy URL saved: ' + val);
+}
+
+async function testProxy() {
+  var btn = document.getElementById('btn-test');
+  var stat = document.getElementById('proxy-status');
+  var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  if (!proxy) { if(stat) stat.textContent = '\u274c No proxy URL set'; return; }
+  if (btn) btn.disabled = true;
+  if (stat) stat.textContent = '\u23f3 Testing...';
+  try {
+    var r = await fetch(proxy + '/kalshi-ticker?ticker=KXCPI-26AUG-T0.2');
+    var d = await r.json();
+    if (stat) stat.textContent = d.market ? '\u2705 Connected — got market data' : '\u26a0\ufe0f Connected but no market data';
+  } catch(e) {
+    if (stat) stat.textContent = '\u274c Failed: ' + e.message;
+  }
+  if (btn) btn.disabled = false;
+}
+
+async function testKalshiSearch() {
+  var stat = document.getElementById('proxy-status');
+  var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  if (!proxy) { if(stat) stat.textContent = '\u274c No proxy URL'; return; }
+  if (stat) stat.textContent = '\u23f3 Testing market search...';
+  try {
+    var r = await fetch(proxy + '/kalshi-all');
+    var d = await r.json();
+    var count = (d.markets||[]).length;
+    var breakdown = d.series_breakdown || {};
+    if (stat) stat.textContent = '\u2705 ' + count + ' markets loaded. Series: ' + Object.keys(breakdown).join(', ');
+  } catch(e) {
+    if (stat) stat.textContent = '\u274c Search failed: ' + e.message;
+  }
 }
 
 // ── PAGE INIT — runs once on load ─────────────────────────────────────────
