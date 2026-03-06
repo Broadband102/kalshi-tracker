@@ -664,10 +664,22 @@ select.inp option { background: var(--card); }
 
 <script>
 // ═══ STATE ═══
-var S = {
+// ── Load persisted state from localStorage, merge with defaults ──────────
+var S_DEFAULTS = {
   bank: 100, day: 1, tax: 22, plays: 10,
   positions: [], lastBrief: '', briefTs: '', lastPlays: []
 };
+var S = (function() {
+  try {
+    var saved = localStorage.getItem('kft-s');
+    if (saved) {
+      var parsed = JSON.parse(saved);
+      // Merge: saved values override defaults, but defaults fill any missing keys
+      return Object.assign({}, S_DEFAULTS, parsed);
+    }
+  } catch(e) {}
+  return Object.assign({}, S_DEFAULTS);
+})();
 
 function saveState() {
   try { localStorage.setItem('kft-s', JSON.stringify(S)); } catch(e) {}
@@ -1864,6 +1876,43 @@ async function refreshAllPrices() {
   if (errors) msg += ' (' + errors + ' failed)';
   showToast(msg);
 }
+// ── PAGE INIT — runs once on load ─────────────────────────────────────────
+(function init() {
+  // Load proxy URL into settings field if saved
+  var proxyUrl = localStorage.getItem('kft-proxy') || '';
+  var proxyEl = document.getElementById('s-proxy');
+  if (proxyEl && proxyUrl) proxyEl.value = proxyUrl;
+
+  // Restore settings inputs from S
+  var fields = {
+    's-bank': S.bank,
+    's-day':  S.day,
+    's-tax':  S.tax,
+    's-plays': S.plays
+  };
+  Object.keys(fields).forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = fields[id];
+  });
+
+  // Update hero stats
+  updateHero();
+  renderChecklist();
+
+  // Restore saved plays
+  if (S.lastPlays && S.lastPlays.length) {
+    renderPlayCards(S.lastPlays);
+  }
+
+  // Restore portfolio positions
+  if (S.positions && S.positions.length) {
+    renderPositions();
+  }
+
+  // Show morning tab by default
+  showTab('morning');
+})();
+
 </script>
 </body>
 </html>
