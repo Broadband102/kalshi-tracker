@@ -1899,9 +1899,13 @@ async function refreshAllPrices() {
   updateHero();
   renderChecklist();
 
-  // Restore saved plays
+  // Restore saved plays and immediately refresh prices from Kalshi
   if (S.lastPlays && S.lastPlays.length) {
     renderPlayCards(S.lastPlays);
+    // Auto-refresh prices in background — don't block UI
+    setTimeout(function() {
+      refreshPlayPrices();
+    }, 1500);
   }
 
   // Restore portfolio positions
