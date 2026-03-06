@@ -599,25 +599,56 @@ async function generatePlays() {
 
 function renderPlayCards(plays) {
   const container = document.getElementById('plays-out');
+  if (!plays || !plays.length) {
+    container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--dim);">NO PLAYS FOUND</div>';
+    return;
+  }
+  
   const tcMap = { 1:'#00d68f', 2:'#ffd740', 3:'#ff5370' };
   
-  container.innerHTML = '<div class="plays-grid">' + plays.map(p => `
-    <div class="play-card" style="--accent-line:${tcMap[p.tier]}">
+  container.innerHTML = '<div class="plays-grid">' + plays.map(p => {
+    const isHeld = (S.positions||[]).some(pos => pos.ticker === p.ticker);
+    const tc = tcMap[p.tier] || '#388bfd';
+    
+    // ── RESTORED BUY LINK LOGIC ───────────────────────────────────────
+    // This rebuilds the URL so you can actually go buy the contract
+    let buyUrl = p.url;
+    if (!buyUrl && p.ticker) {
+        const parts = p.ticker.toLowerCase().split('-');
+        const series = parts[0]; 
+        const slug = series.replace(/^kx/, '');
+        const eventTk = parts.slice(0,2).join('-');
+        buyUrl = `https://kalshi.com/markets/${series}/${slug}/${eventTk}`;
+    } else if (!buyUrl) {
+        buyUrl = `https://kalshi.com/markets?search=${encodeURIComponent(p.ticker || p.market)}`;
+    }
+
+    return `
+    <div class="play-card ${isHeld ? 'held' : ''}" style="--accent-line:${tc}">
       <div class="play-num">#${p.num}</div>
       <div class="play-market">${p.market}</div>
-      <div class="play-cat">${p.category} · ${p.expiryEst}</div>
+      <div class="play-cat">${p.category} · ${p.expiryEst || 'Soon'}</div>
+      
       <div class="play-row">
-        <span class="play-pill pp-yes">${p.direction}</span>
+        <span class="play-pill ${p.direction === 'YES' ? 'pp-yes' : 'pp-no'}">${p.direction}</span>
         <span class="play-pill pp-price">${p.entryTarget}¢ entry</span>
         <span class="play-pill pp-edge">+${p.edge}¢ Edge</span>
         <span class="play-pill pp-size">$${p.size} Suggestion</span>
       </div>
+      
+      <div class="play-bar"><div class="play-fill" style="width:${p.confidence || 50}%;background:${tc}"></div></div>
+      
       <div class="play-reason">${p.reason}</div>
+      
       <div class="play-actions">
-        <button onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="pbtn pbtn-buy">Track Play</button>
+        <a href="${buyUrl}" target="_blank" class="pbtn pbtn-buy">↗ Buy on Kalshi</a>
+        
+        <button onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="pbtn pbtn-track">+ Track</button>
+        
+        <button onclick="this.closest('.play-card').style.opacity='0.3'" class="pbtn pbtn-skip">Skip</button>
       </div>
-    </div>
-  `).join('') + '</div>';
+    </div>`;
+  }).join('') + '</div>';
 }
 
 // ── UTILS ──
