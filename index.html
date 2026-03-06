@@ -1925,46 +1925,45 @@ async function refreshAllPrices() {
   var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
   if (!proxy) { showToast('\u26a0\ufe0f Set proxy URL in Setup first'); return; }
 
-  var updated = 0, errors = 0;
+  try {
+    // One call gets all markets — build a ticker→price map
+    var r = await fetch(proxy + '/kalshi-all');
+    var d = await r.json();
+    var priceMap = {};
+    (d.markets || []).forEach(function(m) {
+      if (m.ticker) priceMap[m.ticker] = m;
+    });
 
-  // Fetch all prices in parallel from Kalshi public API via Worker
-  await Promise.all(positions.map(async function(pos, i) {
-    var ticker = pos.ticker || '';
-    if (!ticker) return;
-    try {
-      // Direct Kalshi public API — no auth needed for market data
-      var url = proxy + '/kalshi-price?ticker=' + encodeURIComponent(ticker);
-      var r   = await fetch(url);
-      var d   = await r.json();
-
-      if (d.yes_ask != null) {
-        // yes_ask = current buy price in cents (what you'd pay right now)
-        S.positions[i].liveCents = d.yes_ask;
-
-        // Recalculate unrealised P&L:
-        // pnl = (live_price - avg_cost) / 100 * qty
+    var updated = 0, errors = 0;
+    positions.forEach(function(pos, i) {
+      var live = priceMap[pos.ticker];
+      if (live && live.yes_ask != null) {
+        S.positions[i].liveCents = live.yes_ask;
+        // P&L = (live_bid - avg_cost) / 100 * qty  (bid = what you'd get selling)
         var avg = S.positions[i].avgCents || 0;
         var qty = S.positions[i].qty      || 0;
         if (avg && qty) {
-          S.positions[i].pnl = ((d.yes_ask - avg) / 100) * qty;
+          S.positions[i].pnl = ((live.yes_bid - avg) / 100) * qty;
         }
         updated++;
       } else {
         errors++;
       }
-    } catch(e) {
-      errors++;
-      console.warn('Price fetch failed for ' + ticker + ':', e.message);
-    }
-  }));
+    });
 
-  saveState();
-  renderPositions();
+    saveState();
+    renderPositions();
+
+    var msg = '\u2705 ' + updated + ' prices updated';
+    if (errors) msg += ' (' + errors + ' not found in feed)';
+    showToast(msg);
+
+  } catch(e) {
+    showToast('\u274c Refresh failed: ' + e.message);
+    console.error('refreshAllPrices error:', e);
+  }
+
   if (btn) { btn.disabled = false; btn.textContent = '\ud83d\udd04 Refresh Prices'; }
-
-  var msg = '\u2705 ' + updated + ' prices updated';
-  if (errors) msg += ' (' + errors + ' failed)';
-  showToast(msg);
 }
 function setRate(r) {
   var el = document.getElementById('pj-rate');
