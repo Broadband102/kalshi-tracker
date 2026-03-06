@@ -272,6 +272,45 @@ body{
 #hist-chart-wrap{margin-bottom:12px;}
 #hist-svg{border-radius:8px;background:var(--surface);border:1px solid var(--border);}
 
+
+/* ── SPORTS ────────────────────────────────────────────────────────────── */
+.sport-market-row {
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 12px;border-radius:8px;border:1.5px solid var(--border);
+  background:var(--card2);margin-bottom:6px;gap:8px;flex-wrap:wrap;
+  transition:background 0.3s, border-color 0.3s, box-shadow 0.3s;
+}
+.sport-market-row.flash-win {
+  background:#dcfce7 !important;
+  border-color:#16a34a !important;
+  box-shadow:0 0 0 3px rgba(22,163,74,0.25) !important;
+  animation:flashPulse 1s ease-in-out infinite;
+}
+@keyframes flashPulse {
+  0%,100% { box-shadow:0 0 0 3px rgba(22,163,74,0.20); }
+  50%      { box-shadow:0 0 0 7px rgba(22,163,74,0.08); }
+}
+.sport-pos-row {
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 12px;border-radius:8px;border:1.5px solid var(--border);
+  background:var(--surface);margin-bottom:6px;gap:8px;flex-wrap:wrap;
+  transition:background 0.3s, border-color 0.3s;
+  border-left:4px solid var(--blue);
+}
+.sport-pos-row.flash-win {
+  background:#dcfce7 !important;
+  border-color:#16a34a !important;
+  box-shadow:0 0 0 3px rgba(22,163,74,0.25) !important;
+  animation:flashPulse 1s ease-in-out infinite;
+}
+.countdown-badge {
+  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:0.72rem;
+  padding:3px 7px;border-radius:5px;border:1px solid;
+}
+.countdown-urgent { background:rgba(192,0,26,0.1);border-color:#c0001a;color:#c0001a; }
+.countdown-soon   { background:rgba(176,120,0,0.1);border-color:#b07800;color:#b07800; }
+.countdown-ok     { background:rgba(10,124,74,0.1);border-color:#0a7c4a;color:#0a7c4a; }
+
 /* ── RESPONSIVE ────────────────────────────────────────────────────────── */
 @media(max-width:600px){
   .hero{padding:8px 12px;}
@@ -301,6 +340,7 @@ body{
   <div class="tab" onclick="showTab('history')">📊 History</div>
   <div class="tab" onclick="showTab('portfolio')">💼 Portfolio</div>
   <div class="tab" onclick="showTab('sell')">🔴 Sell?</div>
+  <div class="tab" onclick="showTab('sports')">🏆 Sports</div>
   <div class="tab" onclick="showTab('setup')">⚙️ Setup</div>
 </div>
 
@@ -444,6 +484,42 @@ body{
   </div>
 </div>
 
+
+<!-- ══════════════════════ SPORTS ══════════════════════════════════════════ -->
+<div class="panel" id="panel-sports">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+      <div class="card-title" style="margin:0;">🏆 Live Sports Markets</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div id="sports-status" style="font-size:0.75rem;color:var(--mid);font-family:'IBM Plex Mono',monospace;"></div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:0.75rem;font-weight:700;color:var(--mid);">AUTO-REFRESH</span>
+          <div id="sports-toggle" onclick="toggleSportsRefresh()"
+            style="width:42px;height:24px;border-radius:12px;background:var(--border);border:1.5px solid var(--border2);cursor:pointer;position:relative;transition:background 0.2s;">
+            <div id="sports-knob"
+              style="width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;box-shadow:0 1px 4px rgba(0,0,0,0.15);"></div>
+          </div>
+        </div>
+        <button class="btn btn-blue" onclick="fetchSports()" id="btn-sports-refresh" style="padding:6px 12px;font-size:0.76rem;">🔄 Refresh</button>
+      </div>
+    </div>
+    <div style="font-size:0.76rem;color:var(--mid);margin-bottom:10px;">
+      Shows games with <strong>60–180 minutes</strong> remaining — catching games mid-action, not in garbage time. 
+      Toggle auto-refresh for live tracking. 
+      Contracts flash 🟢 when your position gains <strong>≥15%</strong> — that's your signal to close on Kalshi.
+    </div>
+    <!-- Sports positions (from portfolio) -->
+    <div id="sports-positions-section" style="display:none;margin-bottom:14px;">
+      <div style="font-size:0.72rem;font-weight:800;color:var(--mid);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:6px;">YOUR SPORTS POSITIONS</div>
+      <div id="sports-positions-list"></div>
+    </div>
+    <!-- Live market scanner -->
+    <div style="font-size:0.72rem;font-weight:800;color:var(--mid);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:6px;">GAMES STARTING SOON / LIVE</div>
+    <div id="sports-markets-list">
+      <div style="text-align:center;padding:40px;color:var(--dim);font-size:0.83rem;">Hit Refresh or enable Auto-Refresh to scan for live games</div>
+    </div>
+  </div>
+</div>
 <!-- ══════════════════════ SETUP ══════════════════════════════════════════ -->
 <div class="panel" id="panel-setup">
   <div class="card">
@@ -525,7 +601,7 @@ function showTab(name) {
   document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('on'); });
   document.getElementById('panel-' + name).classList.add('on');
   document.querySelectorAll('.tab').forEach(function(t) {
-    var map = {plays:'⚡',history:'📊',portfolio:'💼',sell:'🔴',setup:'⚙️'};
+    var map = {plays:'⚡',history:'📊',portfolio:'💼',sell:'🔴',sports:'🏆',setup:'⚙️'};
     if (t.textContent.indexOf(map[name]) === 0) t.classList.add('on');
   });
 }
@@ -1223,7 +1299,7 @@ function renderPositions() {
                    ? ' \u2192 ' + liveStr + ' live'
                    : '';
     var accentColor = p.pnl >= 0 ? 'var(--green)' : 'var(--red)';
-    return '<div class="pos-row" style="border-left:3px solid ' + accentColor + '">' +
+    return '<div class="pos-row" data-ticker="' + (pos.ticker||'') + '" style="border-left:3px solid ' + accentColor + '">' +
       '<div>' +
         '<div class="pos-market">' + (p.market || p.ticker) + '</div>' +
         '<div class="pos-meta">' + p.ticker +
@@ -1265,7 +1341,11 @@ function renderPlayCards(plays) {
     const dirYes  = p.direction !== 'NO';
     const rc      = p.risk === 'LOW' ? '#3fb950' : p.risk === 'HIGH' ? '#f85149' : '#d29922';
     const expRet  = p.edge && p.entryTarget ? ((p.edge / p.entryTarget)*100).toFixed(1)+'%' : '';
-    const seriesUrl = p.url || ('https://kalshi.com/markets/' + (p.ticker||'').toLowerCase().split('-')[0]);
+    const series    = (p.ticker||'').split('-')[0].toLowerCase();
+    const deepUrl   = p.ticker
+      ? 'https://kalshi.com/markets/' + series + '/' + (p.ticker).toLowerCase()
+      : (p.url || 'https://kalshi.com/markets/');
+    const seriesUrl = deepUrl;
 
     // ── Kelly Criterion ───────────────────────────────────────────────
     // Binary market Kelly: f* = (p*b - q) / b
@@ -1345,6 +1425,11 @@ function renderPlayCards(plays) {
     return '<div class="play-card' + (isHeld?' held':'') + '" style="--accent-line:' + tc + '">' +
       '<div class="play-num">#' + (p.num||'') + '</div>' +
       '<div class="play-market">' + (p.market||'Unknown Market') + '</div>' +
+      '<div style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;font-weight:700;color:var(--blue);margin:3px 0 6px;letter-spacing:0.03em;">' +
+        '<a href="' + deepUrl + '" target="_blank" style="color:var(--blue);text-decoration:none;">' +
+          (p.ticker||'') + ' ↗' +
+        '</a>' +
+      '</div>' +
       '<div class="play-cat">' + (p.category||'').toUpperCase() + ' · TIER ' + (p.tier||'?') + ' · ' + (p.expiryEst||'') + '</div>' +
       '<div class="play-row">' +
         '<span class="play-pill ' + (dirYes?'pp-yes':'pp-no') + '">' + (p.direction||'YES') + '</span>' +
@@ -1362,7 +1447,7 @@ function renderPlayCards(plays) {
       '<div class="play-reason">' + (p.reason||'') + '</div>' +
       kellyHtml +
       '<div class="play-actions">' +
-        '<a href="' + seriesUrl + '" target="_blank" class="pbtn pbtn-buy">\u2197 Buy on Kalshi</a>' +
+        '<a href="' + seriesUrl + '" target="_blank" class="pbtn pbtn-buy">↗ Buy ' + (p.direction||'YES') + ' on Kalshi</a>' +
         '<button onclick="addPlayToPortfolio(' + JSON.stringify(p).replace(/"/g,'&quot;') + ')" class="pbtn pbtn-track">+ Track</button>' +
         '<button onclick="this.closest(\'.play-card\').style.opacity=\'0.3\';this.closest(\'.play-card\').style.pointerEvents=\'none\'" class="pbtn pbtn-skip">Skip</button>' +
       '</div>' +
@@ -2060,6 +2145,81 @@ function renderHistoryTable(positions) {
     '<div style="font-size:0.67rem;color:var(--dim);margin-top:8px;">Settled P&L from Kalshi settlement data · Open P&L = live market price vs avg cost</div>';
 }
 
+
+// ═══ SPORTS LIVE TRACKER ═════════════════════════════════════════════════
+var _sportsRefreshOn=false,_sportsTimer=null;
+var SPORT_PREFIXES=['KXNBA','KXNFL','KXMLB','KXNHL','KXNCAA','KXUFC','KXMLS','KXEPL','KXTENNIS','KXGOLF','KXNASCAR','KXF1','KXMVE'];
+function isSportTicker(t){return SPORT_PREFIXES.some(function(p){return(t||'').toUpperCase().startsWith(p);});}
+function toggleSportsRefresh(){
+  _sportsRefreshOn=!_sportsRefreshOn;
+  var tog=document.getElementById('sports-toggle'),knob=document.getElementById('sports-knob'),stat=document.getElementById('sports-status');
+  if(_sportsRefreshOn){tog.style.background='#0a7c4a';tog.style.borderColor='#0a7c4a';knob.style.left='20px';stat.textContent='LIVE every 15s';fetchSports();_sportsTimer=setInterval(fetchSports,15000);}
+  else{tog.style.background='var(--border)';tog.style.borderColor='var(--border2)';knob.style.left='2px';stat.textContent='Paused';clearInterval(_sportsTimer);_sportsTimer=null;}
+}
+function fetchSports(){
+  var proxy=window.KALSHI_PROXY||localStorage.getItem('kft-proxy')||'';
+  if(!proxy){document.getElementById('sports-markets-list').innerHTML='<div style="text-align:center;padding:30px;color:var(--red);">No proxy configured</div>';return;}
+  document.getElementById('sports-status').textContent='Fetching...';
+  fetch(proxy+'/kalshi-sports')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      document.getElementById('sports-status').textContent=_sportsRefreshOn?'LIVE every 15s':'Updated '+new Date().toLocaleTimeString();
+      renderSportsMarkets(d.markets||[]);
+      renderSportsPositions();
+    })
+    .catch(function(e){document.getElementById('sports-status').textContent='Error: '+e.message;});
+}
+function renderSportsMarkets(markets){
+  var el=document.getElementById('sports-markets-list');
+  if(!markets.length){el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);">No games closing within 30 minutes right now.</div>';return;}
+  el.innerHTML=markets.map(function(m){
+    var mins=m.minutes_to_close||0,cdClass=mins<=70?'countdown-urgent':mins<=100?'countdown-soon':'countdown-ok',cdLabel=mins+'m';
+    var series=(m.ticker||'').split('-')[0].toLowerCase(),deepUrl='https://kalshi.com/markets/'+series+'/'+m.ticker.toLowerCase();
+    return '<div class="sport-market-row">'
+      +'<div style="flex:1;min-width:180px;"><div style="font-weight:700;font-size:0.84rem;color:var(--text);">'+(m.title||m.ticker)+'</div>'
+      +'<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:var(--blue);margin-top:2px;">'+m.ticker+'</div>'
+      +(m.subtitle?'<div style="font-size:0.73rem;color:var(--mid);margin-top:2px;">'+m.subtitle+'</div>':'')
+      +'</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+      +'<span class="countdown-badge '+cdClass+'">'+cdLabel+'</span>'
+      +'<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:700;color:var(--green);">YES '+(m.yes_ask||0)+'c</span>'
+      +'<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:700;color:var(--red);">NO '+(m.no_ask||0)+'c</span>'
+      +'<a href="'+deepUrl+'" target="_blank" class="pbtn pbtn-buy" style="padding:5px 10px;font-size:0.73rem;">Trade</a>'
+      +'</div></div>';
+  }).join('');
+}
+function renderSportsPositions(){
+  var positions=(S.positions||[]).filter(function(p){return isSportTicker(p.ticker||'');});
+  var sec=document.getElementById('sports-positions-section'),list=document.getElementById('sports-positions-list');
+  if(!positions.length){sec.style.display='none';return;}
+  sec.style.display='block';
+  var proxy=window.KALSHI_PROXY||localStorage.getItem('kft-proxy')||'';
+  if(!proxy){renderSportsPosCards(positions,{});return;}
+  fetch(proxy+'/kalshi-all').then(function(r){return r.json();})
+    .then(function(d){var pm={};(d.markets||[]).forEach(function(m){pm[m.ticker]=m;});renderSportsPosCards(positions,pm);})
+    .catch(function(){renderSportsPosCards(positions,{});});
+}
+function renderSportsPosCards(positions,pm){
+  var list=document.getElementById('sports-positions-list');
+  list.innerHTML=positions.map(function(pos){
+    var live=pm[pos.ticker],entryC=pos.entryCents||pos.entry||0;
+    var liveC=live?(pos.direction==='NO'?(live.no_bid||0):(live.yes_bid||0)):(pos.liveCents||entryC);
+    var gain=entryC>0?((liveC-entryC)/entryC)*100:0,isFlash=gain>=15;
+    var pnl=((liveC-entryC)/100)*(pos.qty||pos.quantity||1);
+    var series=(pos.ticker||'').split('-')[0].toLowerCase();
+    var deepUrl='https://kalshi.com/markets/'+series+'/'+pos.ticker.toLowerCase();
+    var gc=isFlash?'#16a34a':gain>0?'var(--green)':'var(--red)';
+    return '<div class="sport-pos-row'+(isFlash?' flash-win':'')+'">'
+      +(isFlash?'<div style="font-size:1.1rem;margin-right:6px;">&#x1F7E2;</div>':'')
+      +'<div style="flex:1;min-width:160px;"><div style="font-weight:700;font-size:0.84rem;">'+(pos.name||pos.ticker)+'</div>'
+      +'<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:var(--blue);margin-top:2px;">'+pos.ticker+'</div>'
+      +'<div style="font-size:0.73rem;color:var(--mid);margin-top:2px;">'+(pos.direction||'YES')+' Entry:'+entryC+'c Live:'+liveC+'c</div>'
+      +'</div><div style="text-align:right;">'
+      +'<div style="font-family:IBM Plex Mono,monospace;font-weight:800;font-size:1rem;color:'+gc+';">'+(gain>=0?'+':'')+gain.toFixed(1)+'%</div>'
+      +'<div style="font-size:0.72rem;color:var(--mid);">P&L: '+(pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2)+'</div>'
+      +(isFlash?'<a href="'+deepUrl+'" target="_blank" style="display:inline-block;margin-top:4px;padding:4px 10px;background:#16a34a;color:#fff;border-radius:5px;font-size:0.72rem;font-weight:700;text-decoration:none;">SELL NOW</a>':'')
+      +'</div></div>';
+  }).join('');
+}
 
 // ── PAGE INIT — runs once on load ─────────────────────────────────────────
 (function init() {
