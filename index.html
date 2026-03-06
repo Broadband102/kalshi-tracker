@@ -779,38 +779,21 @@ async function generatePlays() {
   const btn = document.getElementById('btn-plays');
   btn.disabled = true;
   btn.textContent = '⟳ Building plays...';
-
   const container = document.getElementById('plays-out');
   container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:12px;"><div class="spinner"></div> AI building stratified 10-play sheet...</div>';
 
-  const today = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-  const briefContext = S.lastBrief ? `DAILY BRIEF CONTEXT:\n${S.lastBrief.slice(0, 800)}` : 'No brief generated yet.';
-  const bankPerPlay = (S.bank / 10).toFixed(2);
-
-  // Fetch live markets from Worker
-  let marketList = 'Could not load markets.';
+  let marketList = '';
   try {
     const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), 8000); // 8 second timeout
-    const mresp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all', {signal: ctrl.signal});
-    const mdata = await mresp.json();
-    let markets = mdata.markets || [];
-    // Sort by most contested (closest to 50¢) and cap at 60 total
-    markets = markets
-      .filter(m => { const p = m.yes_ask||m.previous_price||0; return p >= 10 && p <= 90; })
-      .sort((a,b) => {
-        const pa = a.yes_ask||a.previous_price||50;
-        const pb = b.yes_ask||b.previous_price||50;
-        return Math.abs(pa-50) - Math.abs(pb-50);
-      })
-      .slice(0, 60);
-    marketList = markets.map((m,i) => {
-      const p = m.yes_ask||m.previous_price||'?';
-      return `${i+1}. [${m.ticker}] ${m.title||''} | YES:${p}¢`;
-    }).join('\n');
-  } catch(e) {}
+    setTimeout(() => ctrl.abort(), 8000);
+    const mr = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all', {signal: ctrl.signal});
+    const md = await mr.json();
+    let markets = (md.markets||[]).filter(m => { const p = m.yes_ask||0; return p >= 10 && p <= 90; }).slice(0, 60);
+    marketList = markets.map((m,i) => `${i+1}. [${m.ticker}] ${m.title||''} | YES:${m.yes_ask||'?'}¢`).join('\n');
+  } catch(e) { marketList = 'Could not load markets.'; }
 
   try {
+    const today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
     const resp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -818,197 +801,31 @@ async function generatePlays() {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2000,
         messages: [{ role: 'user', content:
-          `Today is ${today}. Kalshi prediction market analyst finding HIGH-EDGE plays.\n\n` +
-          `${briefContext}\n\nBANKROLL: $${S.bank}. Tier1=$${(S.bank*0.12).toFixed(0)} Tier2=$${(S.bank*0.10).toFixed(0)} Tier3=$${(S.bank*0.06).toFixed(0)}\n\n` +
+          `Today is ${today}. You are a Kalshi prediction market analyst finding HIGH-EDGE plays.\n\n` +
+          `BANKROLL: $${S.bank}. Tier1=$${(S.bank*0.12).toFixed(0)} Tier2=$${(S.bank*0.10).toFixed(0)} Tier3=$${(S.bank*0.06).toFixed(0)}\n\n` +
           `LIVE KALSHI MARKETS:\n${marketList}\n\n` +
-          `Search today's news. Estimate TRUE probability independently for each market (do NOT anchor to the YES price).\n` +
-          `Return up to 10 plays as raw JSON — ONLY include plays where |fairValue - YES price| >= 15:\n` +
-          `[{"num":1,"market":"title","ticker":"KXFED-27APR-T4.00","category":"Economics","direction":"YES","entryTarget":45,"fairValue":65,"edge":20,"confidence":72,"tier":1,"size":12,"reason":"one sentence","risk":"LOW","expiryEst":"Apr 28"}]\n\n` +
-          `RULES: Only tickers from the list. No duplicates. Minimum 15 cent edge or skip. ` +
-          `Prefer longer-horizon contracts. Return fewer plays rather than padding. REQUIRE CATEGORY DIVERSITY — max 3 plays from any single series (e.g. no more than 3 KXTRUMPSAY). Spread across: Politics, Economics, Crypto, Climate, Science. Raw JSON only.`
+          `Return 5-10 high-edge plays as a JSON array. Only include plays where |fairValue - entryTarget| >= 15. Max 3 plays from the same series. Spread across categories (Politics, Economics, Crypto, Climate).\n\n` +
+          `Respond with ONLY a raw JSON array, no markdown fences, no other text:\n` +
+          `[{"num":1,"market":"title","ticker":"KXTICKER","category":"Economics","direction":"YES","entryTarget":35,"fairValue":55,"edge":20,"confidence":72,"tier":1,"size":12,"reason":"one sentence","risk":"LOW","expiryEst":"Apr 28"}]`
         }]
       })
     });
     const data = await resp.json();
-    const raw = data.content.map(b => b.type === 'text' ? b.text : '').join('');
+    const raw = (data.content||[]).map(b => b.type === 'text' ? b.text : '').join('');
 
-    try {
-      const clean = raw.replace(/```json|```/g, '').trim();
-      const start = clean.indexOf('[');
-      const end = clean.lastIndexOf(']') + 1;
-      const plays = JSON.parse(clean.slice(start, end));
-      S.lastPlays = plays;
-      save();
-      renderPlayCards(plays);
-    } catch(pe) {
-      // Fallback: show raw text
-      container.innerHTML = `<div class="card"><pre style="font-size:0.7rem;white-space:pre-wrap;color:var(--text)">${raw}</pre></div>`;
-    }
-
+    const clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const s = clean.indexOf('[');
+    const e = clean.lastIndexOf(']');
+    if (s < 0 || e < 0) throw new Error('No JSON array found in response');
+    const plays = JSON.parse(clean.slice(s, e+1));
+    S.lastPlays = plays;
+    saveState();
+    renderPlayCards(plays);
   } catch(err) {
-    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--a3);font-size:0.72rem;">Error: ${err.message}</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--red);font-size:0.85rem;">Error: ${err.message}</div>`;
   }
-
   btn.disabled = false;
   btn.textContent = '⚡ Generate Plays';
-}
-
-function renderPlayCards(plays) {
-  const container = document.getElementById('plays-out');
-  if (!plays || !plays.length) {
-    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);">No plays generated.</div>';
-    return;
-  }
-
-  const tierColors = { 1: 'var(--a4)', 2: 'var(--a2)', 3: 'var(--a3)' };
-
-  container.innerHTML = '<div class="plays-grid">' + plays.map(p => {
-    const isHeld = (S.positions||[]).some(pos => pos.market.toLowerCase().includes((p.market||'').toLowerCase().slice(0,10)));
-    const edgePct = Math.min(100, Math.max(0, p.edge || 0));
-    const confPct = Math.min(100, Math.max(0, p.confidence || 50));
-    const dirClass = p.direction === 'YES' ? 'pp-yes' : 'pp-no';
-    const riskColors = { LOW: 'var(--a4)', MEDIUM: 'var(--a2)', HIGH: 'var(--a3)' };
-
-    return `
-    <div class="play-card ${isHeld ? 'held' : ''}">
-      <div class="play-num">${p.num || ''}</div>
-      <div class="play-header">
-        <div class="play-market">${p.market || 'Market'}</div>
-        <div class="play-cat">${p.category || ''} · TIER ${p.tier || '?'} · ${p.expiryEst || ''}</div>
-      </div>
-      <div class="play-row">
-        <span class="play-pill ${dirClass}">${p.direction || 'YES'}</span>
-        <span class="play-pill pp-price">Entry ~${p.entryTarget || '?'}¢</span>
-        <span class="play-pill pp-price">Fair ~${p.fairValue || '?'}¢</span>
-        <span class="play-pill pp-edge">+${p.edge || '?'}¢ edge</span>
-        <span class="play-pill pp-size">$${p.size || '?'} position</span>
-      </div>
-      <div class="play-bar"><div class="play-fill" style="width:${confPct}%;background:${tierColors[p.tier]||'var(--a2)'}"></div></div>
-      <div style="display:flex;justify-content:space-between;font-family:'DM Mono',monospace;font-size:0.6rem;color:var(--dim);margin-bottom:6px;">
-        <span>Confidence: <strong style="color:${tierColors[p.tier]}">${confPct}%</strong></span>
-        <span>Risk: <strong style="color:${riskColors[p.risk]||'var(--mid)'}">${p.risk||'?'}</strong></span>
-        <span>Exp. Return: <strong style="color:var(--a1)">+${p.edge||0}¢ (${p.entryTarget ? ((p.edge/(p.entryTarget||1))*100).toFixed(1) : '?'}%)</strong></span>
-      </div>
-      <div class="play-reason">${p.reason || ''}</div>
-      <div class="play-actions">
-        <button class="btn-sm btn-buy" onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/"/g,'&quot;')})">+ Add to Portfolio</button>
-        <button class="btn-sm btn-watch">Watch</button>
-        <button class="btn-sm btn-skip" onclick="this.closest('.play-card').style.opacity='0.3'">Skip</button>
-      </div>
-    </div>`;
-  }).join('') + '</div>';
-}
-
-function addPlayToPortfolio(play) {
-  state.positions.push({
-    market: play.market,
-    dir: play.direction,
-    entry: play.entryTarget || 60,
-    curr: play.entryTarget || 60,
-    qty: Math.round((play.size || 10) / ((play.entryTarget || 60) / 100)),
-    cat: play.category || 'Other',
-    expiry: play.expiryEst || '—',
-    thesis: play.reason || '',
-    signal: 'HOLD',
-    added: new Date().toLocaleDateString()
-  });
-  save();
-  renderPortfolio();
-  updateStats();
-  alert(`Added "${play.market}" to portfolio! Switch to Portfolio tab to see it.`);
-}
-
-// ═══════════════════════════════════
-// PORTFOLIO
-// ═══════════════════════════════════
-function togglePosForm() {
-  const f = document.getElementById('pos-form');
-  f.classList.toggle('open');
-}
-
-function addPosition() {
-  const pos = {
-    market: document.getElementById('pf-market').value || 'Unnamed Market',
-    dir: document.getElementById('pf-dir').value,
-    entry: parseFloat(document.getElementById('pf-entry').value) || 60,
-    curr: parseFloat(document.getElementById('pf-curr').value) || 60,
-    qty: parseInt(document.getElementById('pf-qty').value) || 10,
-    cat: document.getElementById('pf-cat').value,
-    expiry: document.getElementById('pf-expiry').value || '—',
-    thesis: document.getElementById('pf-thesis').value || '',
-    signal: 'HOLD',
-    added: new Date().toLocaleDateString()
-  };
-  state.positions.push(pos);
-  save();
-  renderPortfolio();
-  updateStats();
-  document.getElementById('pos-form').classList.remove('open');
-  ['pf-market','pf-entry','pf-curr','pf-qty','pf-expiry','pf-thesis'].forEach(id => document.getElementById(id).value = '');
-}
-
-function removePosition(i) {
-  state.positions.splice(i, 1);
-  save();
-  renderPortfolio();
-  updateStats();
-}
-
-function updateCurrPrice(i, val) {
-  state.positions[i].curr = parseFloat(val) || state.positions[i].curr;
-  save();
-  renderPortfolio();
-  updateStats();
-}
-
-function renderPortfolio() {
-  const tbody = document.getElementById('portfolio-tbody');
-  if (!state.positions.length) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:var(--dim);font-size:0.72rem;">No positions. Add one above or use "+ Add to Portfolio" from Today\'s Plays tab.</td></tr>';
-    document.getElementById('ptot-invested').textContent = '$0';
-    document.getElementById('ptot-pnl').textContent = '$0.00';
-    document.getElementById('ptot-ret').textContent = '—';
-    document.getElementById('ptot-count').textContent = '0/10';
-    return;
-  }
-
-  let totalInvested = 0, totalPnl = 0;
-  tbody.innerHTML = state.positions.map((p, i) => {
-    const cost = (p.entry / 100) * p.qty;
-    const currVal = (p.curr / 100) * p.qty;
-    const pnl = currVal - cost;
-    const ret = cost > 0 ? (pnl / cost * 100).toFixed(1) : '0.0';
-    totalInvested += cost;
-    totalPnl += pnl;
-
-    // Signal color
-    const signals = { 'HOLD': 'badge-hold', 'WATCH': 'badge-watch', 'SELL': 'badge-sell', 'NEW': 'badge-new' };
-    const sigClass = signals[p.signal] || 'badge-watch';
-
-    const pnlColor = pnl >= 0 ? 'var(--a4)' : 'var(--a3)';
-
-    return `<tr class="active-row">
-      <td style="font-weight:500;color:var(--bright);">${p.market}</td>
-      <td style="color:${p.dir==='YES'?'var(--a4)':'var(--a3)'};">${p.dir}</td>
-      <td style="font-family:'DM Mono',monospace;">${p.entry}¢</td>
-      <td><input type="number" value="${p.curr}" style="width:55px;background:var(--s2);border:1px solid var(--border);color:var(--bright);padding:3px 6px;border-radius:4px;font-family:'DM Mono',monospace;font-size:0.68rem;" onchange="updateCurrPrice(${i},this.value)">¢</td>
-      <td style="font-family:'DM Mono',monospace;">${p.qty}</td>
-      <td style="font-family:'DM Mono',monospace;">$${cost.toFixed(2)}</td>
-      <td style="font-family:'DM Mono',monospace;color:${pnlColor};">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</td>
-      <td style="font-family:'DM Mono',monospace;color:${pnlColor};">${ret >= 0 ? '+' : ''}${ret}%</td>
-      <td><span style="font-size:0.62rem;color:var(--mid);">${p.cat}</span></td>
-      <td><span class="badge ${sigClass}">${p.signal}</span></td>
-      <td><button class="btn-sm btn-sell" onclick="removePosition(${i})" style="font-size:0.55rem;padding:3px 8px;">✕ Close</button></td>
-    </tr>`;
-  }).join('');
-
-  const avgRet = totalInvested > 0 ? (totalPnl / totalInvested * 100).toFixed(1) : '0.0';
-  document.getElementById('ptot-invested').textContent = '$' + totalInvested.toFixed(2);
-  const pnlEl = document.getElementById('ptot-pnl');
-  pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
-  pnlEl.style.color = totalPnl >= 0 ? 'var(--a4)' : 'var(--a3)';
-  document.getElementById('ptot-ret').textContent = (avgRet >= 0 ? '+' : '') + avgRet + '%';
-  document.getElementById('ptot-count').textContent = state.positions.length + '/10';
 }
 
 async function analyzePortfolio() {
