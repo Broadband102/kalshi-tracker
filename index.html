@@ -868,56 +868,83 @@ function importPortfolio(event) {
   reader.onload = function(e) {
     try {
       const text = e.target.result;
-      // Try JSON first
+
+      // JSON import
       if (file.name.endsWith('.json')) {
         const data = JSON.parse(text);
-        if (data.positions) {
-          S.positions = data.positions;
-        } else if (Array.isArray(data)) {
-          S.positions = data;
-        }
-        if (data.bank) S.bank = data.bank;
+        const positions = Array.isArray(data) ? data : (data.positions || []);
+        S.positions = [...(S.positions||[]), ...positions];
         saveState(); updateHero(); showTab('portfolio');
-        showToast('✅ Imported ' + S.positions.length + ' positions from JSON');
+        showToast('✅ Imported ' + positions.length + ' positions');
         return;
       }
-      // CSV parsing
+
+      // Kalshi CSV export format:
+      // marketTicker, seriesTitle, eventTitle, marketTitle, closeDate,
+      // volume, yesPrice, noPrice, lastTradePrice, position, averagePrice,
+      // exposure, positionReturns, lockedInReturns, totalReturns
       const lines = text.trim().split('\n');
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
+      const rawHeaders = lines[0].replace(/^\uFEFF/, ''); // strip BOM
+      const headers = rawHeaders.split(',').map(h => h.trim().replace(/^"|"$/g,'').toLowerCase());
+
+      const get = (row, name) => (row[headers.indexOf(name)] || '').trim().replace(/^"|"$/g,'');
+
       const positions = [];
       for (let i = 1; i < lines.length; i++) {
         const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''));
-        if (vals.length < 2) continue;
-        const row = {};
-        headers.forEach((h, idx) => { row[h] = vals[idx] || ''; });
-        // Map common CSV column names to our format
-        const pos = {
+        if (!vals[0]) continue;
+
+        const ticker    = get(vals, 'marketticker') || vals[0];
+        const series    = get(vals, 'seriestitle');
+        const eventTitle = get(vals, 'eventtitle');
+        const marketTitle = get(vals, 'markettitle');
+        const closeDate = get(vals, 'closedate');
+        const posStr    = get(vals, 'position');   // "Yes x 22"
+        const avgPrice  = get(vals, 'averageprice'); // "45¢"
+        const exposure  = get(vals, 'exposure');    // "$9.62"
+        const returns   = get(vals, 'positionreturns'); // "+$0.56"
+        const yesPrice  = get(vals, 'yesprice');
+
+        // Parse position: "Yes x 22" → direction YES, qty 22
+        const posMatch = posStr.match(/(Yes|No)\s*x\s*(\d+)/i);
+        const direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
+        const qty = posMatch ? parseInt(posMatch[2]) : 0;
+
+        // Parse prices (strip ¢ and $)
+        const entry = parseFloat(avgPrice.replace('¢','')) || 0;
+        const size  = parseFloat(exposure.replace('$','')) || 0;
+        const pnl   = parseFloat(returns.replace(/[$+]/g,'')) || 0;
+
+        positions.push({
           num: Date.now() + i,
-          market: row.market || row.title || row.question || row.name || '',
-          ticker: row.ticker || row.symbol || '',
-          category: row.category || row.type || 'Other',
-          direction: (row.direction || row.side || row.type2 || 'YES').toUpperCase(),
-          entry: parseFloat(row.entry || row.entryprice || row.price || row.cost || 0),
-          size: parseFloat(row.size || row.amount || row.investment || row.cost || 10),
-          fairValue: parseFloat(row.fairvalue || row.fair || 0),
-          edge: parseFloat(row.edge || 0),
-          reason: row.reason || row.notes || '',
-          added: row.date || row.added || new Date().toLocaleDateString(),
-          url: row.url || ('https://kalshi.com/markets/' + (row.ticker||''))
-        };
-        if (pos.market || pos.ticker) positions.push(pos);
+          market: eventTitle || marketTitle || ticker,
+          ticker: ticker,
+          category: series || 'Other',
+          direction: direction,
+          qty: qty,
+          entry: entry,
+          size: size,
+          pnl: pnl,
+          currentPrice: parseFloat(yesPrice.replace('¢','')) || entry,
+          reason: marketTitle || '',
+          added: closeDate || new Date().toLocaleDateString(),
+          url: 'https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]
+        });
       }
-      if (!positions.length) { showToast('⚠️ No valid rows found in CSV'); return; }
+
+      if (!positions.length) { showToast('⚠️ No valid rows found'); return; }
       S.positions = [...(S.positions||[]), ...positions];
       saveState(); updateHero(); showTab('portfolio');
-      showToast('✅ Imported ' + positions.length + ' positions from CSV');
+      showToast('✅ Imported ' + positions.length + ' positions from Kalshi CSV');
     } catch(err) {
       showToast('❌ Import failed: ' + err.message);
+      console.error(err);
     }
   };
   reader.readAsText(file);
   event.target.value = '';
 }
+
 function renderPlayCards(plays) {
   const container = document.getElementById('plays-out');
   if (!plays || !plays.length) {
@@ -955,7 +982,7 @@ function renderPlayCards(plays) {
       </div>
       <div style="font-size:0.72rem;color:var(--mid);margin-bottom:10px;text-align:center;">${p.reason||''}</div>
       <div style="display:flex;gap:6px;justify-content:center;">
-        <a href="https://kalshi.com/markets/${p.ticker||''}" target="_blank" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;text-decoration:none;">🛒 Buy on Kalshi</a>
+        <a href="https://kalshi.com/markets/${(p.ticker||"").toLowerCase().split("-")[0]}" target="_blank" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;text-decoration:none;">🛒 Buy on Kalshi</a>
         <button onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/'/g,"'")})" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">+ Track</button>
         <button onclick="this.closest('.play-card').style.display='none'" style="background:var(--card2);color:var(--dim);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">Skip</button>
       </div>
