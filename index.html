@@ -87,6 +87,35 @@ body{background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;min-
 .proxy-inp-wrap .inp{flex:1;}
 select.inp option{background:var(--card);}
 @media(max-width:600px){.stat-grid{grid-template-columns:repeat(2,1fr)}.pos-row{grid-template-columns:1fr auto auto}}
+
+.plays-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;padding:4px 0;}
+.play-card{background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);border:1px solid #21262d;border-radius:8px;padding:16px;position:relative;overflow:hidden;transition:border-color 0.2s,transform 0.15s;}
+.play-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent-line,#238636);}
+.play-card:hover{border-color:#388bfd;transform:translateY(-1px);}
+.play-card.held{border-color:#f0883e;}
+.play-num{position:absolute;top:12px;right:14px;font-size:0.65rem;color:#484f58;font-family:'DM Mono',monospace;font-weight:600;letter-spacing:1px;}
+.play-market{font-size:0.82rem;font-weight:600;color:#e6edf3;line-height:1.35;margin-bottom:3px;padding-right:30px;}
+.play-cat{font-size:0.62rem;color:#484f58;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;}
+.play-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+.play-pill{font-size:0.65rem;font-family:'DM Mono',monospace;padding:3px 8px;border-radius:4px;font-weight:600;letter-spacing:0.3px;}
+.pp-yes{background:rgba(35,134,54,0.2);color:#3fb950;border:1px solid rgba(35,134,54,0.4);}
+.pp-no{background:rgba(218,54,51,0.2);color:#f85149;border:1px solid rgba(218,54,51,0.4);}
+.pp-price{background:rgba(56,139,253,0.1);color:#79c0ff;border:1px solid rgba(56,139,253,0.2);}
+.pp-edge{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3);}
+.pp-size{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3);}
+.play-bar{height:2px;background:#21262d;border-radius:1px;margin-bottom:6px;overflow:hidden;}
+.play-fill{height:100%;border-radius:1px;transition:width 0.8s cubic-bezier(0.4,0,0.2,1);}
+.play-meta{display:flex;justify-content:space-between;font-size:0.62rem;color:#484f58;font-family:'DM Mono',monospace;margin-bottom:8px;}
+.play-meta strong{color:#8b949e;}
+.play-reason{font-size:0.72rem;color:#8b949e;margin-bottom:12px;line-height:1.4;font-style:italic;}
+.play-actions{display:flex;gap:6px;}
+.pbtn{font-size:0.7rem;padding:6px 12px;border-radius:5px;border:none;cursor:pointer;font-weight:600;font-family:'DM Mono',monospace;transition:all 0.15s;letter-spacing:0.3px;}
+.pbtn-buy{background:#238636;color:#fff;}
+.pbtn-buy:hover{background:#2ea043;}
+.pbtn-track{background:transparent;color:#388bfd;border:1px solid #388bfd;}
+.pbtn-track:hover{background:rgba(56,139,253,0.15);}
+.pbtn-skip{background:transparent;color:#484f58;border:1px solid #21262d;}
+.pbtn-skip:hover{color:#8b949e;border-color:#484f58;}
 </style>
 </head>
 <body>
@@ -343,6 +372,7 @@ function updateHero() {
   document.getElementById('h-day').textContent  = 'Day ' + S.day;
   document.getElementById('h-pct').textContent  = pct.toFixed(2) + '%';
   document.getElementById('h-need').textContent = needed.toFixed(1) + '%';
+  renderPositions();
 }
 
 function safeJSON(raw, fallback) {
@@ -874,7 +904,7 @@ function importPortfolio(event) {
         const data = JSON.parse(text);
         const positions = Array.isArray(data) ? data : (data.positions || []);
         S.positions = [...(S.positions||[]), ...positions];
-        saveState(); updateHero(); showTab('portfolio');
+        saveState(); updateHero(); renderPositions(); showTab('portfolio');
         showToast('✅ Imported ' + positions.length + ' positions');
         return;
       }
@@ -882,127 +912,106 @@ function importPortfolio(event) {
       // Kalshi CSV export format:
       // marketTicker, seriesTitle, eventTitle, marketTitle, closeDate,
       // volume, yesPrice, noPrice, lastTradePrice, position, averagePrice,
-      // exposure, positionReturns, lockedInReturns, totalReturns
-      const lines = text.trim().split('\n');
-      const rawHeaders = lines[0].replace(/^\uFEFF/, ''); // strip BOM
-      const headers = rawHeaders.split(',').map(h => h.trim().replace(/^"|"$/g,'').toLowerCase());
+      // exposure, positionReturns, lockedInReturns, tota
+function renderPositions() {
+  const list = document.getElementById('pos-list');
+  if (!list) return;
+  const positions = S.positions || [];
 
-      const get = (row, name) => (row[headers.indexOf(name)] || '').trim().replace(/^"|"$/g,'');
+  // Update stats
+  let totalInvested = 0, totalPnl = 0;
+  positions.forEach(p => {
+    totalInvested += parseFloat(p.size||p.exposure||0);
+    totalPnl += parseFloat(p.pnl||p.positionReturns||0);
+  });
+  const el = id => document.getElementById(id);
+  if (el('pt-invested')) el('pt-invested').textContent = '$' + totalInvested.toFixed(0);
+  if (el('pt-pnl')) { el('pt-pnl').textContent = (totalPnl>=0?'+':'') + '$' + totalPnl.toFixed(2); el('pt-pnl').style.color = totalPnl>=0?'var(--green)':'var(--red)'; }
+  if (el('pt-ret')) el('pt-ret').textContent = totalInvested>0 ? (totalPnl/totalInvested*100).toFixed(1)+'%' : '—';
+  if (el('pt-count')) el('pt-count').textContent = positions.length + '/10';
 
-      const positions = [];
-      for (let i = 1; i < lines.length; i++) {
-        const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''));
-        if (!vals[0]) continue;
+  if (!positions.length) {
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:#484f58;font-size:0.82rem;font-family:DM Mono,monospace;">NO POSITIONS — import CSV or add manually</div>';
+    return;
+  }
 
-        const ticker    = get(vals, 'marketticker') || vals[0];
-        const series    = get(vals, 'seriestitle');
-        const eventTitle = get(vals, 'eventtitle');
-        const marketTitle = get(vals, 'markettitle');
-        const closeDate = get(vals, 'closedate');
-        const posStr    = get(vals, 'position');   // "Yes x 22"
-        const avgPrice  = get(vals, 'averageprice'); // "45¢"
-        const exposure  = get(vals, 'exposure');    // "$9.62"
-        const returns   = get(vals, 'positionreturns'); // "+$0.56"
-        const yesPrice  = get(vals, 'yesprice');
+  list.innerHTML = positions.map((p, i) => {
+    const pnl = parseFloat(p.pnl||0);
+    const pnlColor = pnl > 0 ? '#3fb950' : pnl < 0 ? '#f85149' : '#8b949e';
+    const pnlStr = (pnl>=0?'+':'') + '$' + pnl.toFixed(2);
+    const ticker = p.ticker || p.marketTicker || '';
+    const market = p.market || p.eventTitle || p.marketTitle || ticker;
+    const category = p.category || p.seriesTitle || 'Other';
+    const entry = parseFloat(p.entry||p.averagePrice||0);
+    const size = parseFloat(p.size||p.exposure||0);
+    const direction = p.direction || 'YES';
+    const qty = p.qty || '';
+    const url = p.url || ('https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]);
+    return `<div class="pos-row" style="background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:12px 14px;margin-bottom:6px;display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;border-left:3px solid ${pnl>=0?'#238636':'#da3633'};">
+      <div>
+        <div style="font-size:0.8rem;font-weight:600;color:#e6edf3;margin-bottom:2px;">${market}</div>
+        <div style="font-size:0.62rem;color:#484f58;font-family:DM Mono,monospace;letter-spacing:0.5px;">${ticker} · ${category.toUpperCase()} · ${direction} ${qty?'x'+qty:''} · entry ${entry}¢ · $${size.toFixed(0)} invested</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:0.85rem;font-weight:700;color:${pnlColor};font-family:DM Mono,monospace;">${pnlStr}</div>
+        <div style="font-size:0.62rem;color:#484f58;">P&L</div>
+      </div>
+      <div style="display:flex;gap:5px;">
+        <a href="${url}" target="_blank" style="font-size:0.65rem;padding:5px 9px;background:#238636;color:#fff;border-radius:4px;text-decoration:none;font-family:DM Mono,monospace;font-weight:600;">↗</a>
+        <button onclick="removePosition(${i})" style="font-size:0.65rem;padding:5px 9px;background:transparent;color:#484f58;border:1px solid #21262d;border-radius:4px;cursor:pointer;font-family:DM Mono,monospace;">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-        // Parse position: "Yes x 22" → direction YES, qty 22
-        const posMatch = posStr.match(/(Yes|No)\s*x\s*(\d+)/i);
-        const direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
-        const qty = posMatch ? parseInt(posMatch[2]) : 0;
-
-        // Parse prices (strip ¢ and $)
-        const entry = parseFloat(avgPrice.replace('¢','')) || 0;
-        const size  = parseFloat(exposure.replace('$','')) || 0;
-        const pnl   = parseFloat(returns.replace(/[$+]/g,'')) || 0;
-
-        positions.push({
-          num: Date.now() + i,
-          market: eventTitle || marketTitle || ticker,
-          ticker: ticker,
-          category: series || 'Other',
-          direction: direction,
-          qty: qty,
-          entry: entry,
-          size: size,
-          pnl: pnl,
-          currentPrice: parseFloat(yesPrice.replace('¢','')) || entry,
-          reason: marketTitle || '',
-          added: closeDate || new Date().toLocaleDateString(),
-          url: 'https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]
-        });
-      }
-
-      if (!positions.length) { showToast('⚠️ No valid rows found'); return; }
-      S.positions = [...(S.positions||[]), ...positions];
-      saveState(); updateHero(); showTab('portfolio');
-      showToast('✅ Imported ' + positions.length + ' positions from Kalshi CSV');
-    } catch(err) {
-      showToast('❌ Import failed: ' + err.message);
-      console.error(err);
-    }
-  };
-  reader.readAsText(file);
-  event.target.value = '';
+function removePosition(i) {
+  S.positions.splice(i, 1);
+  saveState();
+  renderPositions();
 }
 
 function renderPlayCards(plays) {
   const container = document.getElementById('plays-out');
   if (!plays || !plays.length) {
-    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);">No plays found with sufficient edge.</div>';
+    container.innerHTML = '<div style="text-align:center;padding:60px;color:#484f58;font-size:0.85rem;font-family:DM Mono,monospace;">NO PLAYS FOUND — edge threshold not met</div>';
     return;
   }
-  const tierColors = { 1: 'var(--green)', 2: 'var(--yellow)', 3: 'var(--orange)' };
-  const riskColors = { LOW: 'var(--green)', MEDIUM: 'var(--yellow)', HIGH: 'var(--red)' };
+  const tierLine = { 1:'#3fb950', 2:'#d29922', 3:'#f85149' };
   container.innerHTML = '<div class="plays-grid">' + plays.map(p => {
-    const isHeld = (S.positions||[]).some(pos => pos.market && pos.market.toLowerCase().includes((p.market||'').toLowerCase().slice(0,10)));
-    const confPct = Math.min(100, Math.max(0, p.confidence || 50));
-    const dirClass = p.direction === 'YES' ? 'pp-yes' : 'pp-no';
-    const tc = tierColors[p.tier] || 'var(--blue)';
-    const rc = riskColors[p.risk] || 'var(--yellow)';
-    const expRet = p.edge && p.size ? '+' + (p.edge * p.size / 100).toFixed(0) + ' (' + ((p.edge / (p.entryTarget||50)) * 100).toFixed(1) + '%)' : '';
-    return `
-    <div class="play-card${isHeld ? ' held' : ''}">
-      <div class="play-num">${p.num || ''}</div>
-      <div class="play-header">
-        <div class="play-market">${p.market || 'Market'}</div>
-        <div class="play-cat">${p.category || ''} &middot; TIER ${p.tier || '?'} &middot; ${p.expiryEst || ''}</div>
-      </div>
+    const isHeld = (S.positions||[]).some(pos => pos.ticker === p.ticker);
+    const conf = Math.min(100, Math.max(0, p.confidence||50));
+    const tc = tierLine[p.tier] || '#388bfd';
+    const dirYes = p.direction !== 'NO';
+    const rc = p.risk === 'LOW' ? '#3fb950' : p.risk === 'HIGH' ? '#f85149' : '#d29922';
+    const expRet = p.edge && p.size ? ((p.edge / (p.entryTarget||50))*100).toFixed(1)+'%' : '';
+    const seriesUrl = 'https://kalshi.com/markets/' + (p.ticker||'').toLowerCase().split('-')[0];
+    return `<div class="play-card${isHeld?' held':''}" style="--accent-line:${tc}">
+      <div class="play-num">#${p.num||''}</div>
+      <div class="play-market">${p.market||'Unknown Market'}</div>
+      <div class="play-cat">${(p.category||'').toUpperCase()} · TIER ${p.tier||'?'} · ${p.expiryEst||''}</div>
       <div class="play-row">
-        <span class="play-pill ${dirClass}">${p.direction || 'YES'}</span>
-        <span class="play-pill pp-price">Entry ~${p.entryTarget || '?'}¢</span>
-        <span class="play-pill pp-price">Fair ~${p.fairValue || '?'}¢</span>
-        <span class="play-pill pp-edge">+${p.edge || '?'}¢ edge</span>
-        <span class="play-pill pp-size">$${p.size || '?'} position</span>
+        <span class="play-pill ${dirYes?'pp-yes':'pp-no'}">${p.direction||'YES'}</span>
+        <span class="play-pill pp-price">${p.entryTarget||'?'}¢ entry</span>
+        <span class="play-pill pp-price">${p.fairValue||'?'}¢ fair</span>
+        <span class="play-pill pp-edge">+${p.edge||'?'}¢</span>
+        <span class="play-pill pp-size">$${p.size||'?'}</span>
       </div>
-      <div class="play-bar"><div class="play-fill" style="width:${confPct}%;background:${tc}"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--dim);margin-bottom:6px;">
-        <span>Confidence: <strong style="color:${tc}">${confPct}%</strong></span>
-        <span>Risk: <strong style="color:${rc}">${p.risk||'?'}</strong></span>
-        ${expRet ? `<span>Exp. Return: <strong style="color:${tc}">${expRet}</strong></span>` : ''}
+      <div class="play-bar"><div class="play-fill" style="width:${conf}%;background:${tc}"></div></div>
+      <div class="play-meta">
+        <span>CONF <strong style="color:${tc}">${conf}%</strong></span>
+        <span>RISK <strong style="color:${rc}">${p.risk||'?'}</strong></span>
+        ${expRet?`<span>ROI <strong style="color:${tc}">${expRet}</strong></span>`:''}
       </div>
-      <div style="font-size:0.72rem;color:var(--mid);margin-bottom:10px;text-align:center;">${p.reason||''}</div>
-      <div style="display:flex;gap:6px;justify-content:center;">
-        <a href="https://kalshi.com/markets/${(p.ticker||"").toLowerCase().split("-")[0]}" target="_blank" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;text-decoration:none;">🛒 Buy on Kalshi</a>
-        <button onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/'/g,"'")})" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">+ Track</button>
-        <button onclick="this.closest('.play-card').style.display='none'" style="background:var(--card2);color:var(--dim);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">Skip</button>
+      <div class="play-reason">${p.reason||''}</div>
+      <div class="play-actions">
+        <a href="${seriesUrl}" target="_blank" class="pbtn pbtn-buy">↗ Buy on Kalshi</a>
+        <button onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="pbtn pbtn-track">+ Track</button>
+        <button onclick="this.closest('.play-card').style.opacity='0.3';this.closest('.play-card').style.pointerEvents='none'" class="pbtn pbtn-skip">Skip</button>
       </div>
     </div>`;
   }).join('') + '</div>';
 }
-
-async function analyzePortfolio() {
-  if (!S.positions.length) {
-    alert('No positions to analyze. Add some positions first.');
-    return;
-  }
-
-  const btn = document.getElementById('btn-analyze');
-  btn.disabled = true;
-  btn.textContent = '⟳ Analyzing...';
-
-  document.getElementById('ai-portfolio-analysis').style.display = 'block';
-  const output = document.getElementById('portfolio-analysis-output');
-  output.className = 'ai-output loading';
+ut.className = 'ai-output loading';
   output.innerHTML = '<div class="spinner"></div> AI analyzing your current positions...';
 
   const posText = S.positions.map(p => {
