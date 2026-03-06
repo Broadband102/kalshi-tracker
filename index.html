@@ -789,28 +789,41 @@ async function generatePlays() {
   var t1e = Math.ceil(numPlays * 0.4), t2e = Math.ceil(numPlays * 0.8);
   // Fetch real markets first so Claude picks from actual contracts
   var markets = await getAllMarkets();
-  // Bucket markets by series prefix for balanced selection
+  // Bucket markets by series prefix — confirmed real tickers only
   var byBucket = { Economics:[], Crypto:[], Politics:[], Geopolitics:[], Finance:[], TechScience:[], Climate:[] };
   markets.forEach(function(m) {
     var t = (m.ticker||'').toUpperCase();
+    // Only include markets priced 15-85¢ (real contested markets)
+    var price = m.yes_ask || m.yes_bid || m.yes_price || m.last_price || 50;
+    if (price < 15 || price > 85) return;
     var b =
-      /^KX(FED|CPI|PCE|JOBS|GDP|UNRATE|RECESSION|HOUSING|RETAIL|PPI)/.test(t) ? 'Economics'
+      /^KX(FED|CPI|PCE|JOBS|GDP|UNRATE|RECESSION|HOUSING|RETAIL|PPI|BRAZILGDP|GDPNOM)/.test(t) ? 'Economics'
     : /^KX(BTC|ETH|DOGEMAXY|DOT|BTCYEAR|BTCMAX|ELSALVADOR)/.test(t) ? 'Crypto'
-    : /^KX(ZELENSKYY|UKRAINE|KHAMENEI|LEADERS|CHINA|TAIWAN|IRAN|ISRAEL|NATO|CANAL)/.test(t) ? 'Geopolitics'
-    : /^KX(GOLDPRICE|WTI|SPX|DOW|NQ|VIX)/.test(t) ? 'Finance'
+    : /^KX(ZELENSKYY|UKRAINE|KHAMENEI|LEADERS|CHINA|TAIWAN|IRAN|ISRAEL|NATO|CANAL|MADURO)/.test(t) ? 'Geopolitics'
+    : /^KX(GOLDPRICE|WTI|SPX|DOW|NQ|VIX|DXY)/.test(t) ? 'Finance'
     : /^KX(SPACEX|BESTLLM|CLAUDE|FDA|IPHONE|EVMKT|NYTOA)/.test(t) ? 'TechScience'
     : /^(KXHIGH|KXHURC|TORNADO|KXDET|KXDEN)/.test(t) ? 'Climate'
     : 'Politics';
     byBucket[b].push(m);
   });
+
+  // Sort each bucket by most contested (closest to 50¢ = most uncertain = most edge potential)
+  Object.keys(byBucket).forEach(function(k) {
+    byBucket[k].sort(function(a,b) {
+      var pa = a.yes_ask||a.yes_price||a.last_price||50;
+      var pb = b.yes_ask||b.yes_price||b.last_price||50;
+      return Math.abs(pa-50) - Math.abs(pb-50); // closest to 50 first
+    });
+  });
+
   var balanced = [
-    ...byBucket.Economics.slice(0,15),
-    ...byBucket.Crypto.slice(0,12),
-    ...byBucket.Geopolitics.slice(0,12),
-    ...byBucket.Finance.slice(0,10),
-    ...byBucket.TechScience.slice(0,10),
-    ...byBucket.Climate.slice(0,8),
-    ...byBucket.Politics.slice(0,10),  // cap Trump/politics at 10
+    ...byBucket.Economics.slice(0,12),
+    ...byBucket.Crypto.slice(0,10),
+    ...byBucket.Geopolitics.slice(0,10),
+    ...byBucket.Finance.slice(0,8),
+    ...byBucket.TechScience.slice(0,8),
+    ...byBucket.Climate.slice(0,6),
+    ...byBucket.Politics.slice(0,8),
   ];
   if (!balanced.length) balanced = markets.slice(0, 80); // last resort
 
