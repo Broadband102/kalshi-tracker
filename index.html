@@ -792,7 +792,7 @@ function updateHero() {
   // Update days-left if element exists
   var dlEl = document.getElementById('h-daysleft');
   if (dlEl) dlEl.textContent = daysLeft + 'd left';
-  renderPositions();
+  // NOTE: do NOT call renderPositions() here — causes infinite loop
 }
 
 function safeJSON(raw, fallback) {
@@ -1539,7 +1539,9 @@ function renderPositions() {
   if (bankroll > 0 && bankroll !== S.bank) {
     S.bank = parseFloat(bankroll.toFixed(2));
     saveState();
-    updateHero();
+    // Sync hero stats directly — do NOT call updateHero() (would cause infinite loop)
+    var hBank = document.getElementById('h-bank');
+    if (hBank) hBank.textContent = '$' + S.bank.toLocaleString();
     // Sync the setup bank input
     var bankEl = document.getElementById('s-bank');
     if (bankEl) bankEl.value = S.bank;
