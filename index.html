@@ -494,6 +494,7 @@ select.inp option { background: var(--card); }
 <div class="tabs">
   <div class="tab on" onclick="showTab('morning')">☀️ Morning</div>
   <div class="tab" onclick="showTab('plays')">⚡ 10 Plays</div>
+  <div class="tab" onclick="showTab('history')">📊 History</div>
   <div class="tab" onclick="showTab('portfolio')">💼 Portfolio</div>
   <div class="tab" onclick="showTab('sell')">🔴 Sell?</div>
   <div class="tab" onclick="showTab('projector')">📈 Projector</div>
@@ -604,6 +605,42 @@ select.inp option { background: var(--card); }
     <div id="sell-summary" class="ai-box"></div>
   </div>
 </div>
+
+<!-- 📊 HISTORY -->
+<div class="panel" id="panel-history">
+  <div class="card">
+    <div class="card-title">📊 Trade History</div>
+    <div style="font-size:0.8rem;color:var(--mid);margin-bottom:12px;">Upload a Kalshi trade history CSV to see P&L by date range</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;">
+      <div>
+        <div style="font-size:0.7rem;font-weight:800;color:var(--mid);margin-bottom:4px;">FROM</div>
+        <input class="inp" id="hist-from" type="date" style="width:140px;">
+      </div>
+      <div>
+        <div style="font-size:0.7rem;font-weight:800;color:var(--mid);margin-bottom:4px;">TO</div>
+        <input class="inp" id="hist-to" type="date" style="width:140px;">
+      </div>
+      <label class="btn btn-purple" style="cursor:pointer;padding:7px 16px;">
+        📤 Upload CSV
+        <input type="file" accept=".csv" onchange="loadHistoryCSV(event)" style="display:none;">
+      </label>
+      <button class="btn btn-green" onclick="filterHistory()">📊 Analyze Range</button>
+    </div>
+    <div id="hist-summary" style="display:none;" class="stat-grid" style="margin-bottom:12px;">
+      <div class="stat-box"><div class="sv" id="hs-pnl" style="color:var(--green)">$0</div><div class="sl">Net P&L</div></div>
+      <div class="stat-box"><div class="sv" id="hs-wins" style="color:var(--green)">0</div><div class="sl">Winners</div></div>
+      <div class="stat-box"><div class="sv" id="hs-losses" style="color:var(--red)">0</div><div class="sl">Losers</div></div>
+      <div class="stat-box"><div class="sv" id="hs-winrate" style="color:var(--yellow)">0%</div><div class="sl">Win Rate</div></div>
+      <div class="stat-box"><div class="sv" id="hs-invested" style="color:var(--blue)">$0</div><div class="sl">Invested</div></div>
+      <div class="stat-box"><div class="sv" id="hs-roi" style="color:var(--purple)">0%</div><div class="sl">ROI</div></div>
+    </div>
+    <div id="hist-chart-wrap" style="display:none;margin-bottom:12px;">
+      <svg id="hist-svg" width="100%" height="160" viewBox="0 0 800 160"></svg>
+    </div>
+    <div id="hist-table"></div>
+  </div>
+</div>
+
 
 <!-- 📈 PROJECTOR -->
 <div class="panel" id="panel-projector">
@@ -736,13 +773,24 @@ function saveSettings() {
 
 
 function updateHero() {
-  var pct = S.bank / 587000 * 100;
-  var daysLeft = 302 - S.day;
+  // Auto-calculate day from March 5, 2026 = Day 1
+  var day1    = new Date('2026-03-05T00:00:00');
+  var today   = new Date(); today.setHours(0,0,0,0);
+  var msDay   = 86400000;
+  var dayNum  = Math.max(1, Math.floor((today - day1) / msDay) + 1);
+  var yearEnd = new Date('2026-12-31T00:00:00');
+  var daysLeft= Math.max(0, Math.floor((yearEnd - today) / msDay));
+  S.day = dayNum;
+
+  var pct    = S.bank / 587000 * 100;
   var needed = daysLeft > 0 ? (Math.pow(587000 / S.bank, 1/daysLeft) - 1) * 100 : 0;
   document.getElementById('h-bank').textContent = '$' + S.bank.toLocaleString();
-  document.getElementById('h-day').textContent  = 'Day ' + S.day;
+  document.getElementById('h-day').textContent  = 'Day ' + dayNum;
   document.getElementById('h-pct').textContent  = pct.toFixed(2) + '%';
   document.getElementById('h-need').textContent = needed.toFixed(1) + '%';
+  // Update days-left if element exists
+  var dlEl = document.getElementById('h-daysleft');
+  if (dlEl) dlEl.textContent = daysLeft + 'd left';
   renderPositions();
 }
 
@@ -2111,6 +2159,221 @@ function updateCash(val) {
   S.cash = parseFloat(n.toFixed(2));
   saveState();
   renderPositions();  // recalculates bankroll
+}
+
+// ── HISTORY ────────────────────────────────────────────────────────────────
+var _historyRows = [];  // parsed trade rows from CSV
+
+function loadHistoryCSV(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var text = e.target.result.replace(/\r/g,'');
+      var lines = text.split('\n');
+      lines[0] = lines[0].replace(/^\uFEFF/,'');
+
+      function parseCSVLine(line) {
+        var fields = [], cur = '', inQ = false;
+        for (var i = 0; i < line.length; i++) {
+          var ch = line[i];
+          if (ch === '"') { inQ = !inQ; }
+          else if (ch === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
+          else { cur += ch; }
+        }
+        fields.push(cur.trim());
+        return fields;
+      }
+
+      var headers = parseCSVLine(lines[0]).map(function(h) {
+        return h.replace(/"/g,'').toLowerCase().replace(/[^a-z]/g,'');
+      });
+
+      function col(vals, name) {
+        var idx = headers.indexOf(name);
+        return (idx >= 0 && vals[idx]) ? vals[idx].replace(/"/g,'').trim() : '';
+      }
+      function parseMoney(s) {
+        var n = parseFloat(s.replace(/[^0-9.\-]/g,''));
+        return isNaN(n) ? 0 : n;
+      }
+
+      var rows = [];
+      for (var i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        var vals = parseCSVLine(lines[i]);
+        var ticker    = col(vals,'marketticker'); if (!ticker) continue;
+        var closeDate = col(vals,'closedate');
+        var posStr    = col(vals,'position');
+        var exposure  = parseMoney(col(vals,'exposure'));
+        var returns   = parseMoney(col(vals,'totalreturns'));
+        var locked    = parseMoney(col(vals,'lockedinreturns'));
+        var series    = col(vals,'seriestitle');
+        var market    = col(vals,'eventtitle') || col(vals,'markettitle') || ticker;
+
+        // Parse date from closeDate like "Sep 11, 2026 at 7:25am CDT"
+        var dateMatch = closeDate.match(/([A-Za-z]+ \d+,\s*\d{4})/);
+        var tradeDate = dateMatch ? new Date(dateMatch[1]) : null;
+
+        // P&L = lockedInReturns (settled) or totalReturns
+        var pnl = locked !== 0 ? locked : returns;
+
+        rows.push({
+          ticker:    ticker,
+          market:    market,
+          category:  series || 'Other',
+          date:      tradeDate,
+          dateStr:   tradeDate ? tradeDate.toISOString().slice(0,10) : '',
+          exposure:  exposure,
+          pnl:       pnl,
+          won:       pnl > 0
+        });
+      }
+
+      _historyRows = rows;
+
+      // Set default date range to span of data
+      var dates = rows.filter(function(r){ return r.date; }).map(function(r){ return r.date; });
+      if (dates.length) {
+        var minD = new Date(Math.min.apply(null, dates));
+        var maxD = new Date(Math.max.apply(null, dates));
+        var fromEl = document.getElementById('hist-from');
+        var toEl   = document.getElementById('hist-to');
+        if (fromEl) fromEl.value = minD.toISOString().slice(0,10);
+        if (toEl)   toEl.value   = maxD.toISOString().slice(0,10);
+      }
+
+      showToast('\u2705 Loaded ' + rows.length + ' trades — click Analyze Range');
+      filterHistory();
+    } catch(err) {
+      showToast('\u274c CSV parse error: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function filterHistory() {
+  var fromEl = document.getElementById('hist-from');
+  var toEl   = document.getElementById('hist-to');
+  var fromD  = fromEl && fromEl.value ? new Date(fromEl.value) : null;
+  var toD    = toEl   && toEl.value   ? new Date(toEl.value + 'T23:59:59') : null;
+
+  var rows = _historyRows.filter(function(r) {
+    if (!r.date) return true; // include undated
+    if (fromD && r.date < fromD) return false;
+    if (toD   && r.date > toD)   return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    document.getElementById('hist-table').innerHTML =
+      '<div style="text-align:center;padding:30px;color:var(--dim);">No trades in range — upload a CSV first</div>';
+    document.getElementById('hist-summary').style.display = 'none';
+    document.getElementById('hist-chart-wrap').style.display = 'none';
+    return;
+  }
+
+  // ── Stats ────────────────────────────────────────────────────────────
+  var totalPnl   = 0, totalInv = 0, wins = 0, losses = 0;
+  rows.forEach(function(r) {
+    totalPnl += r.pnl;
+    totalInv += r.exposure;
+    if (r.pnl > 0) wins++;
+    else if (r.pnl < 0) losses++;
+  });
+  var winRate = rows.length ? ((wins / rows.length) * 100).toFixed(0) : 0;
+  var roi     = totalInv > 0 ? ((totalPnl / totalInv) * 100).toFixed(1) : '0.0';
+
+  function setEl(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+  function setCol(id, v) { var el = document.getElementById(id); if (el) el.style.color = v >= 0 ? 'var(--green)' : 'var(--red)'; }
+
+  setEl('hs-pnl',      (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2));
+  setEl('hs-wins',     wins);
+  setEl('hs-losses',   losses);
+  setEl('hs-winrate',  winRate + '%');
+  setEl('hs-invested', '$' + totalInv.toFixed(2));
+  setEl('hs-roi',      (roi >= 0 ? '+' : '') + roi + '%');
+  setCol('hs-pnl', totalPnl);
+  setCol('hs-roi', parseFloat(roi));
+  document.getElementById('hist-summary').style.display = '';
+
+  // ── Cumulative P&L chart ─────────────────────────────────────────────
+  var sorted = rows.filter(function(r){ return r.date; })
+    .sort(function(a,b){ return a.date - b.date; });
+
+  if (sorted.length > 1) {
+    var cumulative = [], running = 0;
+    sorted.forEach(function(r) {
+      running += r.pnl;
+      cumulative.push({ date: r.dateStr, val: running });
+    });
+
+    var W = 800, H = 140, PAD = 35;
+    var vals = cumulative.map(function(p){ return p.val; });
+    var minV = Math.min(0, Math.min.apply(null, vals));
+    var maxV = Math.max(0, Math.max.apply(null, vals));
+    var range = maxV - minV || 1;
+    var n = cumulative.length;
+
+    var pts = cumulative.map(function(p, i) {
+      var x = (PAD + (i / (n-1)) * (W - PAD*2)).toFixed(1);
+      var y = (PAD + (1 - (p.val - minV) / range) * (H - PAD*2)).toFixed(1);
+      return x + ',' + y;
+    });
+
+    var zeroY = (PAD + (1 - (0 - minV) / range) * (H - PAD*2)).toFixed(1);
+    var lastPt = pts[pts.length-1];
+    var lastColor = running >= 0 ? '#3fb950' : '#f85149';
+
+    document.getElementById('hist-svg').innerHTML =
+      '<defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="' + lastColor + '" stop-opacity="0.3"/>' +
+        '<stop offset="100%" stop-color="' + lastColor + '" stop-opacity="0.02"/>' +
+      '</linearGradient></defs>' +
+      // Zero line
+      '<line x1="' + PAD + '" y1="' + zeroY + '" x2="' + (W-PAD) + '" y2="' + zeroY +
+        '" stroke="#ffffff20" stroke-width="1" stroke-dasharray="4,4"/>' +
+      '<text x="' + (PAD-4) + '" y="' + (parseFloat(zeroY)+4) + '" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">$0</text>' +
+      // Fill
+      '<polygon points="' + PAD + ',' + zeroY + ' ' + pts.join(' ') + ' ' + (W-PAD) + ',' + zeroY + '" fill="url(#hg)"/>' +
+      // Line
+      '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + lastColor + '" stroke-width="2" stroke-linejoin="round"/>' +
+      // Start/end labels
+      '<text x="' + PAD + '" y="' + (H+2) + '" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">' + cumulative[0].date + '</text>' +
+      '<text x="' + (W-PAD) + '" y="' + (H+2) + '" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">' + cumulative[n-1].date + '</text>' +
+      // Final value dot
+      '<circle cx="' + pts[n-1].split(',')[0] + '" cy="' + pts[n-1].split(',')[1] + '" r="4" fill="' + lastColor + '"/>' +
+      '<text x="' + (parseFloat(pts[n-1].split(',')[0])+6) + '" y="' + (parseFloat(pts[n-1].split(',')[1])-5) + '" fill="' + lastColor + '" font-size="10" font-family="IBM Plex Mono,monospace" font-weight="bold">' +
+        (running >= 0 ? '+' : '') + '$' + running.toFixed(2) + '</text>';
+
+    document.getElementById('hist-chart-wrap').style.display = '';
+  }
+
+  // ── Trade table ──────────────────────────────────────────────────────
+  var tableRows = rows.slice().sort(function(a,b){
+    return (b.date||0) - (a.date||0);
+  });
+
+  document.getElementById('hist-table').innerHTML =
+    '<div style="display:grid;grid-template-columns:90px 1fr 80px 80px 70px;gap:4px;margin-top:8px;">' +
+    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;">DATE</div>' +
+    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;">MARKET</div>' +
+    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;text-align:right;">INVESTED</div>' +
+    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;text-align:right;">P&L</div>' +
+    '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);padding:4px 6px;text-align:right;">RESULT</div>' +
+    tableRows.map(function(r) {
+      var pnlColor = r.pnl > 0 ? 'var(--green)' : r.pnl < 0 ? 'var(--red)' : 'var(--mid)';
+      var result   = r.pnl > 0 ? '\u2705 WIN' : r.pnl < 0 ? '\u274c LOSS' : '\u2796 PUSH';
+      var bg       = r.pnl > 0 ? 'rgba(63,185,80,0.06)' : r.pnl < 0 ? 'rgba(248,81,73,0.06)' : 'transparent';
+      return '<div style="font-family:IBM Plex Mono,monospace;font-size:0.72rem;padding:6px;color:var(--dim);background:' + bg + ';border-radius:4px 0 0 4px;">' + (r.dateStr||'—') + '</div>' +
+             '<div style="font-size:0.75rem;padding:6px;color:var(--text);background:' + bg + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + r.market + '">' + r.market + '</div>' +
+             '<div style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;padding:6px;text-align:right;color:var(--dim);background:' + bg + ';">$' + r.exposure.toFixed(2) + '</div>' +
+             '<div style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;padding:6px;text-align:right;color:' + pnlColor + ';background:' + bg + ';font-weight:700;">' + (r.pnl >= 0 ? '+' : '') + '$' + r.pnl.toFixed(2) + '</div>' +
+             '<div style="font-size:0.72rem;padding:6px;text-align:right;color:' + pnlColor + ';background:' + bg + ';border-radius:0 4px 4px 0;">' + result + '</div>';
+    }).join('') + '</div>';
 }
 
 // ── PAGE INIT — runs once on load ─────────────────────────────────────────
