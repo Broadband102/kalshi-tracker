@@ -473,7 +473,6 @@ select.inp option { background: var(--card); }
   </div>
 </div>
 
-<script>
 // ═══ STATE ═══
 var S_DEFAULTS = {
   bank: 100, day: 1, tax: 22, plays: 10,
@@ -487,24 +486,18 @@ var S = (function() {
   return Object.assign({}, S_DEFAULTS);
 })();
 
-// ── NEW MATH: KELLY CRITERION ──────────────────────────────────────────
-// Determines optimal bet size based on perceived edge.
-function getKellySize(fairValue, price, bankroll) {
-    if (!price || price <= 0 || price >= 100) return 0;
-    
-    let p = fairValue / 100; // Fair probability decimal
-    let b = (100 - price) / price; // Decimal odds (net profit if win)
-    
-    // Standard Kelly Formula: f* = (p(b+1) - 1) / b
-    let f = (p * (b + 1) - 1) / b;
-    
-    // Quarter-Kelly (0.25) for safety. Capped at 15% of bankroll.
-    let suggested = bankroll * (f * 0.25);
-    return Math.max(0, Math.round(suggested));
-}
-
 function saveState() {
   try { localStorage.setItem('kft-s', JSON.stringify(S)); } catch(e) {}
+}
+
+// ── MATH: KELLY CRITERION ──
+function getKellySize(fairValue, price, bankroll) {
+    if (!price || price <= 0 || price >= 100) return 0;
+    let p = fairValue / 100; 
+    let b = (100 - price) / price; 
+    let f = (p * (b + 1) - 1) / b;
+    let suggested = bankroll * (f * 0.25); // Quarter Kelly
+    return Math.max(0, Math.round(suggested));
 }
 
 function showToast(msg, col) {
@@ -517,13 +510,16 @@ function showToast(msg, col) {
 }
 
 function showTab(name) {
-  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('on'); });
-  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('on'); });
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
   document.getElementById('panel-' + name).classList.add('on');
+  document.querySelectorAll('.tab').forEach(t => {
+    if (t.getAttribute('onclick').includes(name)) t.classList.add('on');
+  });
 }
 
 function updateHero() {
-  var pct = S.bank / 587000 * 100;
+  var pct = (S.bank / 587000) * 100;
   var daysLeft = 302 - S.day;
   var needed = daysLeft > 0 ? (Math.pow(587000 / S.bank, 1/daysLeft) - 1) * 100 : 0;
   document.getElementById('h-bank').textContent = '$' + S.bank.toLocaleString();
@@ -533,33 +529,19 @@ function updateHero() {
   renderPositions();
 }
 
-function safeJSON(raw, fallback) {
-  if (!raw) return fallback;
-  var cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-  try {
-    var s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
-    if (s >= 0 && e > s) return JSON.parse(cleaned.slice(s, e+1));
-  } catch(e) {}
-  return fallback;
-}
-
-// ═══ GENERATE PLAYS (Updated for Kelly) ═══
+// ═══ GENERATE PLAYS ═══
 async function generatePlays() {
   var btn = document.getElementById('btn-plays');
-  btn.disabled = true; btn.textContent = '⏳ Loading...';
+  btn.disabled = true; btn.textContent = '⏳ Analyzing...';
   var container = document.getElementById('plays-out');
-  container.innerHTML = '<div class="spinner"></div> Finding edge plays...';
+  container.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div> Finding edge plays...</div>';
 
   try {
-    // 1. Fetch Markets
     var mr = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all');
     var md = await mr.json();
-    var markets = (md.markets || []).filter(m => m.yes_ask >= 10 && m.yes_ask <= 90 && m.yes_bid > 0).slice(0, 60);
-
+    var markets = (md.markets || []).filter(m => m.yes_ask >= 10 && m.yes_ask <= 90).slice(0, 60);
     var marketList = markets.map((m, i) => `${i+1}. [${m.ticker}] ${m.title} | BUY=${m.yes_ask}¢`).join('\n');
 
-    // 2. Ask Claude (Optimized Prompt for Kelly)
-    var today = new Date().toLocaleDateString();
     var resp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -567,108 +549,149 @@ async function generatePlays() {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2000,
         messages: [{role: 'user', content: 
-          'Today is ' + today + '. You are a Kalshi analyst. BANKROLL: $' + S.bank + '.\n\n' +
-          'LIVE MARKETS:\n' + marketList + '\n\n' +
-          'Find 5-10 plays. CRITICAL: Provide your FAIR VALUE probability (0-100) for YES.\n' +
-          'Return ONLY JSON: [{"num":1,"market":"title","ticker":"TICKER","category":"Econ","direction":"YES","entryTarget":35,"fairValue":55,"confidence":80,"reason":"why","expiryEst":"Mar 15"}]'
+          'Analyze Kalshi markets for a $' + S.bank + ' bankroll. Return ONLY JSON array of plays.\n' +
+          'Format: [{"num":1,"market":"title","ticker":"TICKER","category":"Econ","direction":"YES","entryTarget":35,"fairValue":55,"confidence":80,"reason":"why","expiryEst":"Mar 15"}]\n\n' +
+          'MARKETS:\n' + marketList
         }]
       })
     });
 
     var data = await resp.json();
     var raw = (data.content || []).map(b => b.text).join('');
-    var plays = safeJSON(raw, []);
+    var plays = (function(txt) {
+        var s = txt.indexOf('['), e = txt.lastIndexOf(']');
+        return (s >= 0 && e > s) ? JSON.parse(txt.slice(s, e+1)) : [];
+    })(raw);
 
-    // 3. APPLY KELLY MATH
     plays = plays.map(p => {
         p.size = getKellySize(p.fairValue, p.entryTarget, S.bank);
         p.edge = p.fairValue - p.entryTarget;
-        p.tier = p.edge > 20 ? 1 : p.edge > 12 ? 2 : 3;
+        p.tier = p.edge > 15 ? 1 : p.edge > 8 ? 2 : 3;
         return p;
     });
 
     S.lastPlays = plays;
     saveState();
     renderPlayCards(plays);
-
   } catch(err) {
-    container.innerHTML = '<div style="color:var(--red);">Error: ' + err.message + '</div>';
+    container.innerHTML = '<div style="color:var(--red);padding:20px;">Error: ' + err.message + '</div>';
   }
   btn.disabled = false; btn.textContent = '⚡ Generate Plays';
 }
 
 function renderPlayCards(plays) {
   const container = document.getElementById('plays-out');
-  if (!plays || !plays.length) {
-    container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--dim);">NO PLAYS FOUND</div>';
-    return;
-  }
-  
   const tcMap = { 1:'#00d68f', 2:'#ffd740', 3:'#ff5370' };
   
   container.innerHTML = '<div class="plays-grid">' + plays.map(p => {
-    const isHeld = (S.positions||[]).some(pos => pos.ticker === p.ticker);
-    const tc = tcMap[p.tier] || '#388bfd';
-    
-    // ── RESTORED BUY LINK LOGIC ───────────────────────────────────────
-    // This rebuilds the URL so you can actually go buy the contract
-    let buyUrl = p.url;
-    if (!buyUrl && p.ticker) {
-        const parts = p.ticker.toLowerCase().split('-');
-        const series = parts[0]; 
-        const slug = series.replace(/^kx/, '');
-        const eventTk = parts.slice(0,2).join('-');
-        buyUrl = `https://kalshi.com/markets/${series}/${slug}/${eventTk}`;
-    } else if (!buyUrl) {
-        buyUrl = `https://kalshi.com/markets?search=${encodeURIComponent(p.ticker || p.market)}`;
-    }
-
+    const buyUrl = `https://kalshi.com/markets/${p.ticker.split('-')[0].toLowerCase()}/${p.ticker.toLowerCase()}`;
     return `
-    <div class="play-card ${isHeld ? 'held' : ''}" style="--accent-line:${tc}">
+    <div class="play-card" style="--accent-line:${tcMap[p.tier]}">
       <div class="play-num">#${p.num}</div>
       <div class="play-market">${p.market}</div>
-      <div class="play-cat">${p.category} · ${p.expiryEst || 'Soon'}</div>
-      
+      <div class="play-cat">${p.category} · ${p.expiryEst}</div>
       <div class="play-row">
-        <span class="play-pill ${p.direction === 'YES' ? 'pp-yes' : 'pp-no'}">${p.direction}</span>
+        <span class="play-pill pp-yes">${p.direction}</span>
         <span class="play-pill pp-price">${p.entryTarget}¢ entry</span>
         <span class="play-pill pp-edge">+${p.edge}¢ Edge</span>
         <span class="play-pill pp-size">$${p.size} Suggestion</span>
       </div>
-      
-      <div class="play-bar"><div class="play-fill" style="width:${p.confidence || 50}%;background:${tc}"></div></div>
-      
       <div class="play-reason">${p.reason}</div>
-      
       <div class="play-actions">
-        <a href="${buyUrl}" target="_blank" class="pbtn pbtn-buy">↗ Buy on Kalshi</a>
-        
+        <a href="${buyUrl}" target="_blank" class="pbtn pbtn-buy">↗ Buy</a>
         <button onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="pbtn pbtn-track">+ Track</button>
-        
-        <button onclick="this.closest('.play-card').style.opacity='0.3'" class="pbtn pbtn-skip">Skip</button>
       </div>
     </div>`;
   }).join('') + '</div>';
 }
 
-// ── UTILS ──
+// ═══ PORTFOLIO LOGIC ═══
+function addPlayToPortfolio(p) {
+  const pos = {
+    ticker: p.ticker, market: p.market, direction: p.direction,
+    avgCents: p.entryTarget, qty: Math.round((p.size * 100) / p.entryTarget),
+    invested: p.size, pnl: 0, category: p.category, url: `https://kalshi.com/markets/${p.ticker.split('-')[0].toLowerCase()}/${p.ticker.toLowerCase()}`
+  };
+  S.positions.push(pos);
+  saveState(); updateHero(); renderPositions();
+  showToast('✅ Added to Portfolio');
+}
+
+function renderPositions() {
+  var list = document.getElementById('pos-list');
+  if (!list) return;
+  var totalInv = 0, totalPnl = 0;
+
+  list.innerHTML = S.positions.map((p, i) => {
+    totalInv += p.invested; totalPnl += (p.pnl || 0);
+    var col = (p.pnl >= 0) ? 'var(--green)' : 'var(--red)';
+    return `
+      <div class="pos-row" style="border-left:3px solid ${col}">
+        <div>
+          <div class="pos-market">${p.market}</div>
+          <div class="pos-meta">${p.ticker} · ${p.direction} · ${p.qty} units @ ${p.avgCents}¢</div>
+        </div>
+        <div>
+          <div class="pos-pnl" style="color:${col}">$${(p.pnl || 0).toFixed(2)}</div>
+          <div class="pos-pnl-lbl">P&L</div>
+        </div>
+        <div style="display:flex;gap:5px;">
+           <a href="${p.url}" target="_blank" class="pbtn" style="background:var(--card2);padding:5px 8px;">↗</a>
+           <button onclick="removePos(${i})" class="pbtn" style="background:var(--red);padding:5px 8px;color:#000;">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('pt-invested').textContent = '$' + totalInv.toFixed(2);
+  document.getElementById('pt-pnl').textContent = '$' + totalPnl.toFixed(2);
+  document.getElementById('pt-count').textContent = S.positions.length + '/10';
+}
+
+function removePos(i) { S.positions.splice(i, 1); saveState(); renderPositions(); }
+
+// ═══ CSV IMPORT ═══
+function importPortfolio(event) {
+  var file = event.target.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var lines = e.target.result.split('\n');
+      // Simple CSV Logic: Ticker, Market, Direction, AvgPrice, Qty, Invested
+      var imported = [];
+      for(var i=1; i<lines.length; i++) {
+        var c = lines[i].split(',');
+        if(c.length < 5) continue;
+        imported.push({
+           ticker: c[0], market: c[1], direction: c[2], 
+           avgCents: parseFloat(c[3]), qty: parseInt(c[4]), invested: parseFloat(c[5]), pnl: 0
+        });
+      }
+      S.positions = imported; saveState(); renderPositions();
+      showToast('✅ Imported ' + imported.length + ' positions');
+    } catch(err) { showToast('❌ Import Failed', 'var(--red)'); }
+  };
+  reader.readAsText(file);
+}
+
+// ═══ UTILS ═══
 function drawProj() {
-  // Logic from your original file preserved
   var start = parseFloat(document.getElementById('pj-start').value) || 100;
   var rate = parseFloat(document.getElementById('pj-rate').value) || 3;
   var days = parseInt(document.getElementById('pj-days').value) || 302;
-  document.getElementById('proj-result').innerHTML = `<div style="padding:10px;color:var(--green);font-weight:700;">Compounding to: $${(start * Math.pow(1 + (rate/100), days)).toLocaleString(undefined, {maximumFractionDigits:0})}</div>`;
+  var final = start * Math.pow(1 + (rate/100), days);
+  document.getElementById('proj-result').innerHTML = `<div style="font-size:1.2rem;color:var(--green);font-weight:700;margin:10px 0;">Target: $${final.toLocaleString(undefined,{maximumFractionDigits:0})}</div>`;
 }
 
-function addPosition() { /* Preserved */ }
-function renderPositions() { /* Preserved */ }
+function saveSettings() {
+  S.bank = parseFloat(document.getElementById('s-bank').value) || 100;
+  S.day = parseInt(document.getElementById('s-day').value) || 1;
+  saveState(); updateHero();
+}
 
 (function init() {
-  updateHero();
-  drawProj();
+  updateHero(); drawProj();
   if (S.lastPlays.length) renderPlayCards(S.lastPlays);
+  showTab('morning');
 })();
-
-</script>
 </body>
 </html>
