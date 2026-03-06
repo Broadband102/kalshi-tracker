@@ -411,7 +411,7 @@ function safeJSON(raw, fallback) {
   return fallback;
 }
 
-function showAiError(el, err) {
+async function showAiError(el, err) {
   var msg = err && err.message ? err.message : String(err);
   var isRate = msg.toLowerCase().indexOf('rate') >= 0 || msg.indexOf('429') >= 0;
   var isKey  = msg.indexOf('401') >= 0 || msg.toLowerCase().indexOf('api key') >= 0;
@@ -469,7 +469,7 @@ async function getAllMarkets() {
   }
 }
 
-function scoreMatch(market, searchTerm) {
+async function scoreMatch(market, searchTerm) {
   var title  = (market.title  || market.question || '').toLowerCase().trim();
   var ticker = (market.ticker || '').toLowerCase();
   var term   = searchTerm.toLowerCase().trim();
@@ -556,7 +556,7 @@ async function fetchKalshiMarket(searchTerm) {
   return match ? parseMarket(match) : null;
 }
 
-function parseMarket(m) {
+async function parseMarket(m) {
   var yesAsk  = m.yes_ask  != null ? m.yes_ask  : null;
   var yesBid  = m.yes_bid  != null ? m.yes_bid  : null;
   var lastPrice = m.last_price != null ? m.last_price : null;
@@ -970,7 +970,7 @@ function removePosition(i) {
   renderPositions();
 }
 
-function renderPlayCards(plays) {
+async function renderPlayCards(plays) {
   const container = document.getElementById('plays-out');
   if (!plays || !plays.length) {
     container.innerHTML = '<div style="text-align:center;padding:60px;color:#484f58;font-size:0.85rem;font-family:DM Mono,monospace;">NO PLAYS FOUND — edge threshold not met</div>';
