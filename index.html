@@ -776,707 +776,454 @@ async function runBrief() {
 
 // ═══ PLAYS ═══
 async function generatePlays() {
-  var btn = document.getElementById('btn-plays');
-  btn.disabled = true; btn.textContent = '⏳ Building plays...';
-  document.getElementById('plays-out').innerHTML = '<div style="text-align:center;padding:50px;color:var(--mid);font-size:0.9rem;font-weight:700;"><div class="spinner" style="margin:0 auto 14px;width:32px;height:32px;border-width:4px;"></div>Building your play sheet...</div>';
-  var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  var brief = S.lastBrief ? S.lastBrief.slice(0, 200) : 'No brief yet.';
-  var sc = getOptimalPlays(S.bank);
-  var numPlays = S.plays || 10;
-  var t1 = (S.bank * sc.pctPerPlay / 100 * 1.2).toFixed(0);
-  var t2 = (S.bank * sc.pctPerPlay / 100).toFixed(0);
-  var t3 = (S.bank * sc.pctPerPlay / 100 * 0.6).toFixed(0);
-  var t1e = Math.ceil(numPlays * 0.4), t2e = Math.ceil(numPlays * 0.8);
-  // Fetch real markets first so Claude picks from actual contracts
-  var markets = await getAllMarkets();
-  // Bucket markets by series prefix — confirmed real tickers only
-  var byBucket = { Economics:[], Crypto:[], Politics:[], Geopolitics:[], Finance:[], TechScience:[], Climate:[] };
-  markets.forEach(function(m) {
-    var t = (m.ticker||'').toUpperCase();
-    // Only include markets priced 15-85¢ (real contested markets)
-    var price = m.yes_ask || m.yes_bid || m.yes_price || m.last_price || 50;
-    if (price < 15 || price > 85) return;
-    var b =
-      /^KX(FED|CPI|PCE|JOBS|GDP|UNRATE|RECESSION|HOUSING|RETAIL|PPI|BRAZILGDP|GDPNOM)/.test(t) ? 'Economics'
-    : /^KX(BTC|ETH|DOGEMAXY|DOT|BTCYEAR|BTCMAX|ELSALVADOR)/.test(t) ? 'Crypto'
-    : /^KX(ZELENSKYY|UKRAINE|KHAMENEI|LEADERS|CHINA|TAIWAN|IRAN|ISRAEL|NATO|CANAL|MADURO)/.test(t) ? 'Geopolitics'
-    : /^KX(GOLDPRICE|WTI|SPX|DOW|NQ|VIX|DXY)/.test(t) ? 'Finance'
-    : /^KX(SPACEX|BESTLLM|CLAUDE|FDA|IPHONE|EVMKT|NYTOA)/.test(t) ? 'TechScience'
-    : /^(KXHIGH|KXHURC|TORNADO|KXDET|KXDEN)/.test(t) ? 'Climate'
-    : 'Politics';
-    byBucket[b].push(m);
-  });
+  const btn = document.getElementById('btn-plays');
+  btn.disabled = true;
+  btn.textContent = '⟳ Building plays...';
 
-  // Sort each bucket by most contested (closest to 50¢ = most uncertain = most edge potential)
-  Object.keys(byBucket).forEach(function(k) {
-    byBucket[k].sort(function(a,b) {
-      var pa = a.yes_ask||a.yes_price||a.last_price||50;
-      var pb = b.yes_ask||b.yes_price||b.last_price||50;
-      return Math.abs(pa-50) - Math.abs(pb-50); // closest to 50 first
-    });
-  });
+  const container = document.getElementById('plays-container');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:12px;"><div class="spinner"></div> AI building stratified 10-play sheet...</div>';
 
-  var balanced = [
-    ...byBucket.Economics.slice(0,12),
-    ...byBucket.Crypto.slice(0,10),
-    ...byBucket.Geopolitics.slice(0,10),
-    ...byBucket.Finance.slice(0,8),
-    ...byBucket.TechScience.slice(0,8),
-    ...byBucket.Climate.slice(0,6),
-    ...byBucket.Politics.slice(0,8),
-  ];
-  if (!balanced.length) balanced = markets.slice(0, 80); // last resort
+  const today = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  const briefContext = state.lastBrief ? `DAILY BRIEF CONTEXT:\n${state.lastBrief.slice(0, 800)}` : 'No brief generated yet.';
+  const bankPerPlay = (state.bank / 10).toFixed(2);
 
-  // Filter out near-settled markets
-  balanced = balanced.filter(function(m) {
-    var p = m.yes_ask || m.yes_bid || m.yes_price || m.last_price || 50;
-    return p >= 10 && p <= 90;
-  });
-
-  var marketList = balanced.map(function(m, i) {
-    var price = m.yes_ask || m.yes_bid || m.yes_price || m.last_price || '?';
-    var noPrice = m.no_ask || m.no_bid || (price !== '?' ? 100 - price : '?');
-    return (i+1) + '. [' + (m.ticker||'') + '] ' + (m.title || m.question || '') + ' | YES:' + price + '¢ NO:' + noPrice + '¢';
-  }).join('\n');
-
-  // Build owned list using tickers where available, fall back to name
-  var ownedList = S.positions.map(function(p) { return p.ticker || p.name; }).join(', ');
-  var alreadyOwned = S.positions.length
-    ? 'SKIP these contracts — already owned (by ticker or title): ' + ownedList + '.'
-    : '';
-
-  var prompt = 'Today is ' + today + '. Kalshi analyst. Bankroll $' + S.bank + '. Context: ' + brief
-    + '\n\nHere are the REAL currently open Kalshi contracts. Pick ONLY from this list:\n'
-    + marketList
-    + (alreadyOwned ? '\n\n' + alreadyOwned : '')
-    + '\n\nGenerate exactly ' + numPlays + ' plays. Copy EXACT ticker and title from the list. Pick nearest expiry. No duplicate contracts.'
-    + ' Return ONLY JSON array: [{"num":1,"market":"exact title","kalshiSearch":"KXFED","category":"Economic","direction":"YES","fairValue":65,"entryTarget":52,"confidence":78,"tier":1,"size":' + t1 + ',"reason":"one sentence","risk":"LOW","expiry":"Mar 17"}]'
-    + ' Plays 1-' + t1e + ': Tier1 $' + t1 + ' economic/fed/cpi | ' + (t1e+1) + '-' + t2e + ': Tier2 $' + t2 + ' geopolitics/politics/crypto | ' + (t2e+1) + '-' + numPlays + ': Tier3 $' + t3 + ' tech/climate/speculative.'
-    + ' RULES: '
-    + '1. ONLY use contracts from the list above. '
-    + '2. NO duplicates — every play must be a different ticker. '
-    + '3. NO contracts expiring within 3 days. '
-    + '4. ONLY contracts with YES price between 15 and 85 cents — skip near-certain outcomes. '
-    + '5. MINIMUM EDGE REQUIREMENT: your fairValue MUST differ from the YES price by AT LEAST 15 cents. If edge < 15 cents, SKIP that contract entirely. Do not force plays — return fewer than ' + numPlays + ' if needed. '
-    + '6. Edge = fairValue minus YES price. Positive = buy YES. Negative edge (fairValue < price) = buy NO instead. '
-    + '7. Base fairValue on todays news, recent data, and genuine probability assessment — not just the market price. '
-    + 'RETURN UP TO ' + numPlays + ' ITEMS that meet ALL rules. Quality over quantity.';
+  // Fetch live markets from Worker
+  let marketList = 'Could not load markets.';
   try {
-    var raw = await callClaude(prompt, false, 1200);
-    var plays = safeJSON(raw, []);
-    if (plays.length) {
-      S.lastPlays = plays; saveState(); renderPlayCards(plays);
-      setTimeout(function() { loadAllPrices(plays); }, 500);
-    } else {
-      // JSON parse failed - show error + first 500 chars of raw for debugging
-      document.getElementById('plays-out').innerHTML = '<div class="card">'
-        + '<div style="color:var(--red);font-weight:800;margin-bottom:8px;">⚠️ Could not parse plays — try again</div>'
-        + '<div style="font-size:0.75rem;color:var(--mid);white-space:pre-wrap;max-height:200px;overflow:auto;">' 
-        + raw.slice(0,500) + '</div></div>';
-      console.log('Full raw response:', raw);
+    const mresp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-all');
+    const mdata = await mresp.json();
+    let markets = mdata.markets || [];
+    // Sort by most contested (closest to 50¢) and cap at 60 total
+    markets = markets
+      .filter(m => { const p = m.yes_ask||m.previous_price||0; return p >= 10 && p <= 90; })
+      .sort((a,b) => {
+        const pa = a.yes_ask||a.previous_price||50;
+        const pb = b.yes_ask||b.previous_price||50;
+        return Math.abs(pa-50) - Math.abs(pb-50);
+      })
+      .slice(0, 60);
+    marketList = markets.map((m,i) => {
+      const p = m.yes_ask||m.previous_price||'?';
+      return `${i+1}. [${m.ticker}] ${m.title||''} | YES:${p}¢`;
+    }).join('\n');
+  } catch(e) {}
+
+  try {
+    const resp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1200,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content:
+          `Today is ${today}. Kalshi prediction market analyst finding HIGH-EDGE plays.\n\n` +
+          `${briefContext}\n\nBANKROLL: $${state.bank}. Tier1=$${(state.bank*0.12).toFixed(0)} Tier2=$${(state.bank*0.10).toFixed(0)} Tier3=$${(state.bank*0.06).toFixed(0)}\n\n` +
+          `LIVE KALSHI MARKETS:\n${marketList}\n\n` +
+          `Search today's news. Estimate TRUE probability independently for each market (do NOT anchor to the YES price).\n` +
+          `Return up to 10 plays as raw JSON — ONLY include plays where |fairValue - YES price| >= 15:\n` +
+          `[{"num":1,"market":"title","ticker":"KXFED-27APR-T4.00","category":"Economics","direction":"YES","entryTarget":45,"fairValue":65,"edge":20,"confidence":72,"tier":1,"size":12,"reason":"one sentence","risk":"LOW","expiryEst":"Apr 28"}]\n\n` +
+          `RULES: Only tickers from the list. No duplicates. Minimum 15 cent edge or skip. ` +
+          `Prefer longer-horizon contracts. Return fewer plays rather than padding. Raw JSON only.`
+        }]
+      })
+    });
+    const data = await resp.json();
+    const raw = data.content.map(b => b.type === 'text' ? b.text : '').join('');
+
+    try {
+      const clean = raw.replace(/```json|```/g, '').trim();
+      const start = clean.indexOf('[');
+      const end = clean.lastIndexOf(']') + 1;
+      const plays = JSON.parse(clean.slice(start, end));
+      state.lastPlays = plays;
+      save();
+      renderPlayCards(plays);
+    } catch(pe) {
+      // Fallback: show raw text
+      container.innerHTML = `<div class="card"><pre style="font-size:0.7rem;white-space:pre-wrap;color:var(--text)">${raw}</pre></div>`;
     }
-  } catch(e) {
-    var el = document.createElement('div'); el.style.padding = '20px';
-    showAiError(el, e);
-    document.getElementById('plays-out').innerHTML = '';
-    document.getElementById('plays-out').appendChild(el);
+
+  } catch(err) {
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--a3);font-size:0.72rem;">Error: ${err.message}</div>`;
   }
-  btn.disabled = false; btn.textContent = '⚡ Generate ' + numPlays + ' Plays';
+
+  btn.disabled = false;
+  btn.textContent = '⚡ Generate Plays';
 }
 
 function renderPlayCards(plays) {
-  var tc = {1:'tier1', 2:'tier2', 3:'tier3'};
-  var tb = {1:'pb-t1', 2:'pb-t2', 3:'pb-t3'};
-  var tl = {1:'🟢 Tier 1', 2:'🔵 Tier 2', 3:'🟠 Tier 3'};
-  var tf = {1:'var(--green)', 2:'var(--blue)', 3:'var(--orange)'};
-
-  var html = '<div class="plays-grid">';
-  for (var i = 0; i < plays.length; i++) {
-    var p = plays[i];
-    var dir = (p.direction || 'YES').toUpperCase();
-    var conf = Math.min(100, Math.max(0, p.confidence || 50));
-    var tier = p.tier || 2;
-    var searchEnc = encodeURIComponent(p.kalshiSearch || p.market || '');
-
-    html += '<div class="play-card ' + (tc[tier] || 'tier2') + '" id="pcard-' + p.num + '">';
-    html += '<div class="play-num">' + (p.num || '') + '</div>';
-    html += '<span class="play-badge ' + (tb[tier] || 'pb-t2') + '">' + (tl[tier] || 'Tier 2') + '</span>';
-    html += '<div class="play-title">' + (p.market || 'Market') + '</div>';
-    html += '<div class="play-cat">' + (p.category || '') + ' · Expires ~' + (p.expiry || '?') + '</div>';
-
-    // Live price box
-    html += '<div id="price-' + p.num + '" style="background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:10px;">';
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">';
-    html += '<div><div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;">Live Kalshi Price</div>';
-    html += '<div id="liveprice-' + p.num + '" style="font-family:Fredoka One,cursive;font-size:1.3rem;color:var(--dim);">⏳ Loading...</div></div>';
-    html += '<div style="text-align:right;"><div style="font-size:0.65rem;font-weight:800;color:var(--mid);text-transform:uppercase;">AI Fair Value</div>';
-    html += '<div style="font-family:Fredoka One,cursive;font-size:1.3rem;color:var(--yellow);">' + (p.fairValue || p.entryTarget || '?') + '¢</div></div>';
-    html += '</div>';
-    html += '<div id="edge-' + p.num + '" style="font-size:0.78rem;font-weight:800;color:var(--dim);">Calculating edge from live price...</div>';
-    html += '<div style="display:flex;gap:6px;margin-top:8px;">';
-    html += '<button id="pricebtn-' + p.num + '" data-num="' + p.num + '" data-s="' + searchEnc + '" onclick="loadLivePrice(+this.dataset.num,decodeURIComponent(this.dataset.s),\'\')" style="flex:1;background:rgba(96,165,250,0.2);border:2px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;cursor:pointer;">🔄 Refresh Price</button>';
-    html += '<a id="buylink-' + p.num + '" href="https://kalshi.com/markets?search=' + searchEnc + '" target="_blank" style="flex:1;text-align:center;background:rgba(74,222,128,0.2);border:2px solid var(--green);color:var(--green);border-radius:8px;padding:6px;font-weight:800;font-size:0.72rem;text-decoration:none;">🛒 Buy on Kalshi</a>';
-    html += '</div></div>';
-
-    html += '<div class="play-pills">';
-    html += '<span class="pill ' + (dir === 'YES' ? 'pill-yes' : 'pill-no') + '">' + dir + '</span>';
-    html += '<span class="pill pill-size">$' + (p.size || '?') + '</span>';
-    html += '<span class="pill" style="background:rgba(167,139,250,0.15);color:var(--purple);border:2px solid var(--purple);">🎯 ' + conf + '% conf</span>';
-    html += '<span class="pill" style="background:rgba(255,255,255,0.05);color:var(--dim);border:2px solid var(--border);">⚠️ ' + (p.risk || 'MED') + '</span>';
-    html += '</div>';
-    html += '<div class="conf-bar"><div class="conf-fill" style="width:' + conf + '%;background:' + (tf[tier] || 'var(--blue)') + '"></div></div>';
-    html += '<div class="play-reason">' + (p.reason || '') + '</div>';
-    html += '<div class="play-btns">';
-    html += '<button class="pbtn pbtn-add" data-num="' + p.num + '" onclick="addPlayToPort(S.lastPlays.find(function(x){return x.num==+this.dataset.num;}.bind(this))||{})">➕ Add to Portfolio</button>';
-    html += '<button class="pbtn pbtn-skip" onclick="this.closest(\'.play-card\').style.opacity=\'0.35\';this.textContent=\'⏭ Skipped\'">Skip</button>';
-    html += '</div></div>';
+  const container = document.getElementById('plays-container');
+  if (!plays || !plays.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);">No plays generated.</div>';
+    return;
   }
-  html += '</div>';
-  document.getElementById('plays-out').innerHTML = html;
+
+  const tierColors = { 1: 'var(--a4)', 2: 'var(--a2)', 3: 'var(--a3)' };
+
+  container.innerHTML = '<div class="plays-grid">' + plays.map(p => {
+    const isHeld = state.positions.some(pos => pos.market.toLowerCase().includes((p.market||'').toLowerCase().slice(0,10)));
+    const edgePct = Math.min(100, Math.max(0, p.edge || 0));
+    const confPct = Math.min(100, Math.max(0, p.confidence || 50));
+    const dirClass = p.direction === 'YES' ? 'pp-yes' : 'pp-no';
+    const riskColors = { LOW: 'var(--a4)', MEDIUM: 'var(--a2)', HIGH: 'var(--a3)' };
+
+    return `
+    <div class="play-card ${isHeld ? 'held' : ''}">
+      <div class="play-num">${p.num || ''}</div>
+      <div class="play-header">
+        <div class="play-market">${p.market || 'Market'}</div>
+        <div class="play-cat">${p.category || ''} · TIER ${p.tier || '?'} · ${p.expiryEst || ''}</div>
+      </div>
+      <div class="play-row">
+        <span class="play-pill ${dirClass}">${p.direction || 'YES'}</span>
+        <span class="play-pill pp-price">Entry ~${p.entryTarget || '?'}¢</span>
+        <span class="play-pill pp-price">Fair ~${p.fairValue || '?'}¢</span>
+        <span class="play-pill pp-edge">+${p.edge || '?'}¢ edge</span>
+        <span class="play-pill pp-size">$${p.size || '?'} position</span>
+      </div>
+      <div class="play-bar"><div class="play-fill" style="width:${confPct}%;background:${tierColors[p.tier]||'var(--a2)'}"></div></div>
+      <div style="display:flex;justify-content:space-between;font-family:'DM Mono',monospace;font-size:0.6rem;color:var(--dim);margin-bottom:6px;">
+        <span>Confidence: <strong style="color:${tierColors[p.tier]}">${confPct}%</strong></span>
+        <span>Risk: <strong style="color:${riskColors[p.risk]||'var(--mid)'}">${p.risk||'?'}</strong></span>
+        <span>Exp. Return: <strong style="color:var(--a1)">+${p.edge||0}¢ (${p.entryTarget ? ((p.edge/(p.entryTarget||1))*100).toFixed(1) : '?'}%)</strong></span>
+      </div>
+      <div class="play-reason">${p.reason || ''}</div>
+      <div class="play-actions">
+        <button class="btn-sm btn-buy" onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/"/g,'&quot;')})">+ Add to Portfolio</button>
+        <button class="btn-sm btn-watch">Watch</button>
+        <button class="btn-sm btn-skip" onclick="this.closest('.play-card').style.opacity='0.3'">Skip</button>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
 }
 
-function addPlayToPort(play) {
-  if (!play || !play.market) return;
-  // Use the live Kalshi price if it was fetched, otherwise fall back to AI estimate
-  var liveEl = document.getElementById('liveprice-' + play.num);
-  var liveText = liveEl ? liveEl.textContent : '';
-  var liveMatch = liveText.match(/(\d+)/);
-  var livePrice = liveMatch ? parseInt(liveMatch[1]) : null;
-  var playEntry = livePrice || play.currentKalshiPrice || play.entryTarget || play.fairValue || 60;
-  var autoStop = Math.round(playEntry * 0.75);
-  // Store the kalshiSearch ticker so refresh can find it directly
-  var tickerHint = play.kalshiSearch || play.market || '';
-  S.positions.push({
-    name: play.market, dir: play.direction || 'YES',
-    entry: playEntry, curr: playEntry,
-    qty:   Math.round((play.size || 10) / (playEntry / 100)),
-    cat:   play.category || 'Other', expiry: play.expiry || '—',
-    thesis: play.reason || '', stop: autoStop,
-    ticker: tickerHint,
+function addPlayToPortfolio(play) {
+  state.positions.push({
+    market: play.market,
+    dir: play.direction,
+    entry: play.entryTarget || 60,
+    curr: play.entryTarget || 60,
+    qty: Math.round((play.size || 10) / ((play.entryTarget || 60) / 100)),
+    cat: play.category || 'Other',
+    expiry: play.expiryEst || '—',
+    thesis: play.reason || '',
+    signal: 'HOLD',
     added: new Date().toLocaleDateString()
   });
-  saveState(); renderPortfolio(); updateHero(); showToast('✅ Added to portfolio!');
-}
-
-// ═══ PORTFOLIO ═══
-function addPosition() {
-  var entryPrice = parseFloat(document.getElementById('pf-entry').value) || 60;
-  var stopVal = parseFloat(document.getElementById('pf-stop').value);
-  S.positions.push({
-    name:   document.getElementById('pf-name').value.trim() || 'My Trade',
-    dir:    document.getElementById('pf-dir').value,
-    entry:  entryPrice,
-    curr:   parseFloat(document.getElementById('pf-curr').value) || entryPrice,
-    qty:    parseInt(document.getElementById('pf-qty').value) || 10,
-    cat:    document.getElementById('pf-cat').value,
-    expiry: document.getElementById('pf-exp').value || '—',
-    thesis: document.getElementById('pf-thesis').value || '',
-    stop:   isNaN(stopVal) ? null : stopVal,
-    added:  new Date().toLocaleDateString()
-  });
-  saveState(); renderPortfolio(); updateHero();
-  ['pf-name','pf-entry','pf-curr','pf-qty','pf-exp','pf-stop','pf-thesis'].forEach(function(id) { document.getElementById(id).value = ''; });
-  showToast('✅ Position saved!');
-}
-
-function exportPortfolio() {
-  var data = {
-    version: 1,
-    exported: new Date().toISOString(),
-    bankroll: S.bank,
-    positions: S.positions,
-    settings: S.settings || {}
-  };
-  var blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'kalshi-portfolio-' + new Date().toISOString().slice(0,10) + '.json';
-  a.click();
-  showToast('📥 Portfolio exported!');
-}
-
-function importPortfolio(event) {
-  var file = event.target.files[0];
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      var text = e.target.result;
-
-      // Detect CSV vs JSON
-      if (file.name.endsWith('.csv') || text.trim().startsWith('"marketTicker"') || text.trim().startsWith('marketTicker')) {
-        importKalshiCSV(text);
-      } else {
-        importJSON(text);
-      }
-    } catch(err) {
-      showToast('❌ Could not parse file: ' + err.message, 'var(--red)');
-    }
-  };
-  reader.readAsText(file);
-  event.target.value = '';
-}
-
-function importKalshiCSV(text) {
-  // Parse CSV
-  var lines = text.trim().split('\n');
-  var headers = lines[0].replace(/\uFEFF/g,'').split(',').map(function(h) {
-    return h.replace(/"/g,'').trim();
-  });
-
-  var positions = [];
-  for (var i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-
-    // Handle quoted CSV fields
-    var fields = [];
-    var line = lines[i];
-    var inQuote = false;
-    var current = '';
-    for (var c = 0; c < line.length; c++) {
-      if (line[c] === '"') { inQuote = !inQuote; }
-      else if (line[c] === ',' && !inQuote) { fields.push(current.trim()); current = ''; }
-      else { current += line[c]; }
-    }
-    fields.push(current.trim());
-
-    var row = {};
-    headers.forEach(function(h, idx) { row[h] = fields[idx] || ''; });
-
-    // Parse position: "Yes x 22" or "No x 5"
-    var posMatch = (row.position || '').match(/(Yes|No)\s*x\s*(\d+)/i);
-    if (!posMatch) continue;
-    var dir = posMatch[1].toUpperCase() === 'YES' ? 'YES' : 'NO';
-    var qty = parseInt(posMatch[2]);
-
-    // Parse prices — strip ¢ and $
-    var avgPrice   = parseFloat((row.averagePrice   || '0').replace(/[¢$,]/g,'')) || 0;
-    var currPrice  = parseFloat((row.lastTradePrice || row.yesPrice || '0').replace(/[¢$,]/g,'')) || 0;
-    var exposure   = parseFloat((row.exposure || '0').replace(/[¢$,]/g,'')) || 0;
-
-    // Parse expiry date
-    var expiry = '';
-    if (row.closeDate) {
-      var dm = row.closeDate.match(/([A-Za-z]+ \d+, \d+)/);
-      if (dm) expiry = dm[1];
-    }
-
-    // Build title from CSV fields
-    var title = row.marketTitle
-      ? (row.eventTitle || row.seriesTitle || '') + ' — ' + row.marketTitle
-      : (row.seriesTitle || row.marketTicker || '');
-
-    // Auto stop-loss at 25% below average price
-    var stop = Math.round(avgPrice * 0.75);
-
-    positions.push({
-      name:   title,
-      ticker: row.marketTicker || '',
-      dir:    dir,
-      entry:  avgPrice,
-      curr:   currPrice,
-      qty:    qty,
-      cat:    row.seriesTitle || 'Economic',
-      expiry: expiry,
-      thesis: '',
-      stop:   stop,
-      added:  new Date().toLocaleDateString()
-    });
-  }
-
-  if (!positions.length) { showToast('❌ No positions found in CSV', 'var(--red)'); return; }
-
-  // Auto-calculate bankroll from total exposure
-  var totalExposure = positions.reduce(function(sum, p) {
-    return sum + (p.qty * p.curr / 100);
-  }, 0);
-
-  var msg = 'Import ' + positions.length + ' positions from Kalshi CSV?\n\nOK = Replace all\nCancel = Merge with existing';
-  if (S.positions.length === 0 || confirm(msg)) {
-    S.positions = positions;
-    S.bank = parseFloat(totalExposure.toFixed(2));
-  } else {
-    var existing = S.positions.map(function(p) { return p.ticker || p.name; });
-    var newOnes  = positions.filter(function(p) { return !existing.includes(p.ticker || p.name); });
-    S.positions  = S.positions.concat(newOnes);
-    // Recalculate bankroll from all positions
-    S.bank = parseFloat(S.positions.reduce(function(sum, p) {
-      return sum + (p.qty * p.curr / 100);
-    }, 0).toFixed(2));
-    showToast('✅ Merged ' + newOnes.length + ' new positions!');
-    saveState(); renderPortfolio(); updateHero(); return;
-  }
-
-  saveState(); renderPortfolio(); updateHero();
-  showToast('✅ Imported ' + positions.length + ' positions · Bankroll set to $' + S.bank);
-}
-
-function importJSON(text) {
-  var data = JSON.parse(text);
-  if (!data.positions) { showToast('❌ Invalid JSON file', 'var(--red)'); return; }
-  if (S.positions.length > 0 && !confirm('Replace ' + S.positions.length + ' existing positions?')) {
-    var existing = S.positions.map(function(p) { return p.name; });
-    var newOnes  = data.positions.filter(function(p) { return !existing.includes(p.name); });
-    S.positions  = S.positions.concat(newOnes);
-    showToast('✅ Merged ' + newOnes.length + ' positions!');
-  } else {
-    S.positions = data.positions;
-    if (data.bankroll) S.bank = data.bankroll;
-    showToast('✅ Imported ' + data.positions.length + ' positions!');
-  }
-  saveState(); renderPortfolio(); updateHero();
-}
-
-function updateEntry(i, val) {
-  S.positions[i].entry = parseFloat(val) || S.positions[i].entry;
-  saveState(); renderPortfolio(); updateHero();
-  showToast('✅ Entry price updated');
-}
-
-function updateCurr(i, val) {
-  S.positions[i].curr = parseFloat(val) || S.positions[i].curr;
-  saveState(); renderPortfolio(); updateHero();
-}
-
-function closePos(i) {
-  if (!confirm('Close "' + S.positions[i].name + '"?')) return;
-  S.positions.splice(i, 1);
-  saveState(); renderPortfolio(); updateHero(); showToast('📤 Closed!');
-}
-
-async function refreshAllPrices() {
-  if (!S.positions.length) { showToast('No positions to refresh', 'var(--yellow)'); return; }
-  var btn = document.getElementById('btn-refresh-prices');
-  btn.disabled = true; btn.textContent = '⏳ Refreshing...';
-
-  // Clear stale cache so getAllMarkets re-fetches fresh data
-  window.MARKET_CACHE = null;
-  window.MARKET_CACHE_TIME = 0;
-  await getAllMarkets();
-
-  var updated = 0;
-  for (var i = 0; i < S.positions.length; i++) {
-    var pos = S.positions[i];
-    try {
-      var searchTerm = pos.ticker || pos.name;
-      console.log('[Refresh] Fetching price for:', searchTerm);
-      var market = await fetchKalshiMarket(searchTerm);
-      console.log('[Refresh] Market result:', market ? JSON.stringify({ticker:market.ticker,last:market.lastPrice,mid:market.mid,ask:market.yesAsk}) : 'NULL');
-      if (market) {
-        var newPrice = market.lastPrice != null ? market.lastPrice
-          : market.mid != null ? market.mid
-          : pos.dir === 'YES' ? market.yesAsk
-          : market.noAsk;
-        console.log('[Refresh] New price:', newPrice, 'old:', pos.curr);
-        if (newPrice != null) {
-          S.positions[i].curr = newPrice;
-          if (market.ticker && !pos.ticker) S.positions[i].ticker = market.ticker;
-          updated++;
-        }
-      }
-    } catch(e) { console.error('[Refresh] Error for', pos.name, e.message); }
-    // Small delay between fetches
-    await new Promise(function(r) { setTimeout(r, 150); });
-  }
-
-  saveState();
+  save();
   renderPortfolio();
-  updateHero();
+  updateStats();
+  alert(`Added "${play.market}" to portfolio! Switch to Portfolio tab to see it.`);
+}
 
-  // Check stop-losses
-  var stopped = S.positions.filter(function(p) {
-    return p.stop != null && p.curr <= p.stop;
-  });
-  if (stopped.length) {
-    stopped.forEach(function(p) {
-      showToast('🚨 STOP-LOSS HIT: ' + p.name.slice(0,30) + ' (' + p.curr + '¢ ≤ ' + p.stop + '¢)', 'var(--red)');
-    });
-    // Flash portfolio tab red
-    var tab = document.querySelector('.tab[onclick*="portfolio"]');
-    if (tab) {
-      tab.style.borderColor = 'var(--red)';
-      tab.style.color = 'var(--red)';
-      tab.textContent = '💼 Portfolio 🚨';
-      setTimeout(function() {
-        tab.style.borderColor = '';
-        tab.style.color = '';
-        tab.textContent = '💼 Portfolio';
-      }, 10000);
-    }
-  }
+// ═══════════════════════════════════
+// PORTFOLIO
+// ═══════════════════════════════════
+function togglePosForm() {
+  const f = document.getElementById('pos-form');
+  f.classList.toggle('open');
+}
 
-  // Recalculate bankroll from current position values
-  if (updated > 0) {
-    S.bank = parseFloat(S.positions.reduce(function(sum, p) {
-      return sum + (p.qty * p.curr / 100);
-    }, 0).toFixed(2));
-  }
+function addPosition() {
+  const pos = {
+    market: document.getElementById('pf-market').value || 'Unnamed Market',
+    dir: document.getElementById('pf-dir').value,
+    entry: parseFloat(document.getElementById('pf-entry').value) || 60,
+    curr: parseFloat(document.getElementById('pf-curr').value) || 60,
+    qty: parseInt(document.getElementById('pf-qty').value) || 10,
+    cat: document.getElementById('pf-cat').value,
+    expiry: document.getElementById('pf-expiry').value || '—',
+    thesis: document.getElementById('pf-thesis').value || '',
+    signal: 'HOLD',
+    added: new Date().toLocaleDateString()
+  };
+  state.positions.push(pos);
+  save();
+  renderPortfolio();
+  updateStats();
+  document.getElementById('pos-form').classList.remove('open');
+  ['pf-market','pf-entry','pf-curr','pf-qty','pf-expiry','pf-thesis'].forEach(id => document.getElementById(id).value = '');
+}
 
-  btn.disabled = false; btn.textContent = '🔄 Refresh Prices';
-  showToast('✅ Updated ' + updated + '/' + S.positions.length + ' prices · Bankroll $' + S.bank + (stopped.length ? ' ⚠️ STOP HIT!' : ''));
+function removePosition(i) {
+  state.positions.splice(i, 1);
+  save();
+  renderPortfolio();
+  updateStats();
+}
+
+function updateCurrPrice(i, val) {
+  state.positions[i].curr = parseFloat(val) || state.positions[i].curr;
+  save();
+  renderPortfolio();
+  updateStats();
 }
 
 function renderPortfolio() {
-  var el = document.getElementById('pos-list');
-  if (!S.positions.length) {
-    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--dim);font-size:0.9rem;font-weight:700;">🌱 No positions yet!</div>';
-    document.getElementById('pt-invested').textContent = '$0';
-    document.getElementById('pt-pnl').textContent = '$0.00';
-    document.getElementById('pt-ret').textContent = '—';
-    document.getElementById('pt-count').textContent = '0/10';
+  const tbody = document.getElementById('portfolio-tbody');
+  if (!state.positions.length) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;color:var(--dim);font-size:0.72rem;">No positions. Add one above or use "+ Add to Portfolio" from Today\'s Plays tab.</td></tr>';
+    document.getElementById('ptot-invested').textContent = '$0';
+    document.getElementById('ptot-pnl').textContent = '$0.00';
+    document.getElementById('ptot-ret').textContent = '—';
+    document.getElementById('ptot-count').textContent = '0/10';
     return;
   }
-  var ti = 0, tp = 0;
-  var html = '';
-  S.positions.forEach(function(p, i) {
-    var cost = (p.entry/100)*p.qty, cv = (p.curr/100)*p.qty, pnl = cv-cost;
-    var ret = cost > 0 ? ((pnl/cost)*100).toFixed(1) : '0.0';
-    ti += cost; tp += pnl;
-    html += '<div class="pos-row ' + (pnl>=0?'pos-up':'pos-down') + '">';
-    html += '<div><div class="pos-name">' + p.name + ' <span style="font-size:0.72rem;color:' + (p.dir==='YES'?'var(--green)':'var(--red)') + ';">' + p.dir + '</span></div>';
-    var stopLabel = p.stop != null ? ' · 🛑 Stop: ' + p.stop + '¢' : '';
-    var stopHit = p.stop != null && p.curr <= p.stop;
-    html += '<div class="pos-meta">' + p.cat
-      + ' · Entry: <input type="number" value="' + p.entry + '" onchange="updateEntry(' + i + ',this.value)" '
-      + 'style="width:42px;background:transparent;border:none;border-bottom:1px dashed var(--mid);color:var(--yellow);font-weight:800;font-size:0.78rem;padding:0 2px;text-align:center;" title="Click to edit entry price">'
-      + '¢ · ' + p.qty + ' contracts · Exp: ' + p.expiry + stopLabel + '</div>';
-    if (stopHit) html += '<div style="color:var(--red);font-size:0.72rem;font-weight:800;animation:pulse 1s infinite;">🚨 STOP-LOSS HIT — Consider exiting!</div>';
-    html += '</div>';
-    html += '<div><div style="font-size:0.72rem;font-weight:800;color:var(--mid);margin-bottom:2px;">Current (¢)</div>';
-    html += '<input class="pos-curr-input" type="number" value="' + p.curr + '" onchange="updateCurr(' + i + ',this.value)"></div>';
-    html += '<div class="pos-pnl" style="color:' + (pnl>=0?'var(--green)':'var(--red)') + ';">' + (pnl>=0?'+':'') + '$' + pnl.toFixed(2) + '</div>';
-    html += '<div style="font-weight:800;font-size:0.85rem;color:' + (pnl>=0?'var(--green)':'var(--red)') + ';">' + (parseFloat(ret)>=0?'+':'') + ret + '%</div>';
-    html += '<button class="pos-close-btn" onclick="closePos(' + i + ')">✕</button>';
-    html += '</div>';
-  });
-  el.innerHTML = html;
-  var ar = ti > 0 ? ((tp/ti)*100).toFixed(1) : '0.0';
-  var pe = document.getElementById('pt-pnl');
-  pe.textContent = (tp>=0?'+':'') + '$' + tp.toFixed(2);
-  pe.style.color = tp >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('pt-invested').textContent = '$' + ti.toFixed(2);
-  document.getElementById('pt-ret').textContent = (parseFloat(ar)>=0?'+':'') + ar + '%';
-  document.getElementById('pt-count').textContent = S.positions.length + '/10';
+
+  let totalInvested = 0, totalPnl = 0;
+  tbody.innerHTML = state.positions.map((p, i) => {
+    const cost = (p.entry / 100) * p.qty;
+    const currVal = (p.curr / 100) * p.qty;
+    const pnl = currVal - cost;
+    const ret = cost > 0 ? (pnl / cost * 100).toFixed(1) : '0.0';
+    totalInvested += cost;
+    totalPnl += pnl;
+
+    // Signal color
+    const signals = { 'HOLD': 'badge-hold', 'WATCH': 'badge-watch', 'SELL': 'badge-sell', 'NEW': 'badge-new' };
+    const sigClass = signals[p.signal] || 'badge-watch';
+
+    const pnlColor = pnl >= 0 ? 'var(--a4)' : 'var(--a3)';
+
+    return `<tr class="active-row">
+      <td style="font-weight:500;color:var(--bright);">${p.market}</td>
+      <td style="color:${p.dir==='YES'?'var(--a4)':'var(--a3)'};">${p.dir}</td>
+      <td style="font-family:'DM Mono',monospace;">${p.entry}¢</td>
+      <td><input type="number" value="${p.curr}" style="width:55px;background:var(--s2);border:1px solid var(--border);color:var(--bright);padding:3px 6px;border-radius:4px;font-family:'DM Mono',monospace;font-size:0.68rem;" onchange="updateCurrPrice(${i},this.value)">¢</td>
+      <td style="font-family:'DM Mono',monospace;">${p.qty}</td>
+      <td style="font-family:'DM Mono',monospace;">$${cost.toFixed(2)}</td>
+      <td style="font-family:'DM Mono',monospace;color:${pnlColor};">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</td>
+      <td style="font-family:'DM Mono',monospace;color:${pnlColor};">${ret >= 0 ? '+' : ''}${ret}%</td>
+      <td><span style="font-size:0.62rem;color:var(--mid);">${p.cat}</span></td>
+      <td><span class="badge ${sigClass}">${p.signal}</span></td>
+      <td><button class="btn-sm btn-sell" onclick="removePosition(${i})" style="font-size:0.55rem;padding:3px 8px;">✕ Close</button></td>
+    </tr>`;
+  }).join('');
+
+  const avgRet = totalInvested > 0 ? (totalPnl / totalInvested * 100).toFixed(1) : '0.0';
+  document.getElementById('ptot-invested').textContent = '$' + totalInvested.toFixed(2);
+  const pnlEl = document.getElementById('ptot-pnl');
+  pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
+  pnlEl.style.color = totalPnl >= 0 ? 'var(--a4)' : 'var(--a3)';
+  document.getElementById('ptot-ret').textContent = (avgRet >= 0 ? '+' : '') + avgRet + '%';
+  document.getElementById('ptot-count').textContent = state.positions.length + '/10';
 }
 
 async function analyzePortfolio() {
-  if (!S.positions.length) { alert('Add positions first!'); return; }
-  var btn = document.getElementById('btn-analyze');
-  btn.disabled = true; btn.textContent = '⏳ Analyzing...';
-  document.getElementById('analysis-card').style.display = 'block';
-  var out = document.getElementById('analysis-out');
-  out.className = 'ai-box loading';
-  out.innerHTML = '<div class="spinner"></div> Checking your positions...';
-  var posText = S.positions.map(function(p) { return '• ' + p.name + ' (' + p.dir + ') entry ' + p.entry + '¢ now ' + p.curr + '¢, ' + p.qty + ' contracts'; }).join('\n');
-  try {
-    var text = await callClaude('Today is ' + new Date().toLocaleDateString() + '. Quick portfolio check:\n' + posText + '\nSearch latest news for each. 3-5 sentences, be direct: HOLD/SELL/WATCH each and why.', true, 600);
-    out.className = 'ai-box'; out.textContent = text;
-  } catch(e) { out.className = 'ai-box'; showAiError(out, e); }
-  btn.disabled = false; btn.textContent = '🤖 AI Analyze All';
-}
+  if (!state.positions.length) {
+    alert('No positions to analyze. Add some positions first.');
+    return;
+  }
 
-// ═══ SELL ADVISOR ═══
-async function sellAdvisor() {
-  if (!S.positions.length) { alert('Add some positions first!'); return; }
-  var btn = document.getElementById('btn-sell');
-  btn.disabled = true; btn.textContent = '⏳ Checking...';
-  document.getElementById('sell-card').style.display = 'block';
-  var grid = document.getElementById('sell-grid');
-  var summary = document.getElementById('sell-summary');
-  grid.innerHTML = '<div class="ai-box loading"><div class="spinner"></div> Scanning news for your positions...</div>';
-  summary.className = 'ai-box loading';
-  summary.innerHTML = '<div class="spinner"></div> Building recommendations...';
-  var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  var posText = S.positions.map(function(p, i) {
-    var cost = (p.entry/100)*p.qty, cv = (p.curr/100)*p.qty, pnl = cv-cost;
-    var ret = cost > 0 ? ((pnl/cost)*100).toFixed(1) : '0';
-    return 'Position ' + (i+1) + ': "' + p.name + '" (' + p.dir + ') | Entry: ' + p.entry + '¢ | Current: ' + p.curr + '¢ | P&L: ' + (pnl>=0?'+':'') + '$' + pnl.toFixed(2) + ' (' + ret + '%)';
+  const btn = document.getElementById('btn-analyze');
+  btn.disabled = true;
+  btn.textContent = '⟳ Analyzing...';
+
+  document.getElementById('ai-portfolio-analysis').style.display = 'block';
+  const output = document.getElementById('portfolio-analysis-output');
+  output.className = 'ai-output loading';
+  output.innerHTML = '<div class="spinner"></div> AI analyzing your current positions...';
+
+  const posText = state.positions.map(p => {
+    const cost = (p.entry / 100) * p.qty;
+    const currVal = (p.curr / 100) * p.qty;
+    const pnl = currVal - cost;
+    const ret = cost > 0 ? (pnl / cost * 100).toFixed(1) : '0';
+    return `- ${p.market} (${p.dir}) | Entry: ${p.entry}¢ | Current: ${p.curr}¢ | Qty: ${p.qty} | P&L: ${ret}% | Expiry: ${p.expiry} | Thesis: ${p.thesis}`;
   }).join('\n');
-  var brief = S.lastBrief ? '\nContext: ' + S.lastBrief.slice(0, 300) : '';
-  var prompt = 'Today ' + today + '. Kalshi advisor. Give action calls for each position.\n' + posText + brief + '\nSearch news for each. JSON only:\n[{"name":"pos name","action":"SELL","urgency":"NOW","reason":"one sentence why","pnl_pct":"+5.2","emoji":"🔴"}]\nSELL/HOLD/WATCH | NOW/TODAY/NO RUSH | 🔴=SELL 🟡=WATCH 🟢=HOLD\nAfter JSON: "SUMMARY:" + 2 sentences.';
+
   try {
-    var raw = await callClaude(prompt, true, 800);
-    var summaryIdx = raw.indexOf('SUMMARY:');
-    var jsonPart = summaryIdx > -1 ? raw.slice(0, summaryIdx) : raw;
-    var summaryPart = summaryIdx > -1 ? raw.slice(summaryIdx + 8).trim() : '';
-    var picks = safeJSON(jsonPart, []);
-    var actionColor = {SELL:'var(--red)', WATCH:'var(--yellow)', HOLD:'var(--green)'};
-    var urgencyColor = {NOW:'var(--red)', TODAY:'var(--yellow)', 'NO RUSH':'var(--mid)'};
-    if (picks.length) {
-      grid.innerHTML = picks.map(function(r) {
-        return '<div style="background:rgba(255,255,255,0.04);border:2px solid ' + (actionColor[r.action]||'var(--border)') + ';border-radius:12px;padding:12px 14px;margin-bottom:8px;">'
-          + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
-          + '<div style="font-weight:800;font-size:0.9rem;">' + (r.emoji||'') + '  ' + r.name + '</div>'
-          + '<div style="display:flex;gap:6px;"><span style="font-weight:800;font-size:0.85rem;color:' + (actionColor[r.action]||'var(--dim)') + ';">' + r.action + '</span>'
-          + '<span style="font-weight:700;font-size:0.75rem;color:' + (urgencyColor[r.urgency]||'var(--mid)') + ';">' + r.urgency + '</span></div></div>'
-          + '<div style="font-size:0.8rem;color:var(--mid);font-weight:700;">' + r.reason + '</div>'
-          + '<div style="font-size:0.75rem;color:var(--dim);margin-top:4px;">P&L: ' + r.pnl_pct + '%</div></div>';
-      }).join('');
-    } else {
-      grid.innerHTML = '<div style="color:var(--mid);font-size:0.85rem;font-weight:700;">' + jsonPart + '</div>';
-    }
-    summary.className = 'ai-box'; summary.textContent = summaryPart || 'Check each position above!';
-    showToast('✅ Sell analysis ready!');
-  } catch(e) { grid.innerHTML = ''; summary.className = 'ai-box'; showAiError(summary, e); }
-  btn.disabled = false; btn.textContent = '🔴 Should I Sell?';
-  document.getElementById('sell-card').scrollIntoView({behavior:'smooth', block:'start'});
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{
+          role: 'user',
+          content: `Today is ${new Date().toLocaleDateString()}. Analyze my current Kalshi prediction market portfolio:
+
+${posText}
+
+Search for latest news relevant to each position. For each position give:
+1. HOLD / SELL / WATCH recommendation with brief reason
+2. Any news that changes the thesis
+3. Suggested exit target price if still holding
+
+Then give an overall portfolio health summary:
+- Correlation risks (positions that might resolve similarly)
+- Overall risk exposure
+- Suggested moves to optimize for 2%/day target on $${state.bank} bankroll
+
+Be direct and specific. Format clearly.`
+        }]
+      })
+    });
+
+    const data = await resp.json();
+    const text = data.content.map(b => b.type === 'text' ? b.text : '').filter(Boolean).join('\n');
+    output.className = 'ai-output';
+    output.textContent = text || 'No analysis returned.';
+
+    // Try to auto-update signals from analysis
+    const lines = text.split('\n');
+    state.positions.forEach((pos, i) => {
+      const marketName = pos.market.toLowerCase().slice(0, 15);
+      lines.forEach(line => {
+        const l = line.toLowerCase();
+        if (l.includes(marketName)) {
+          if (l.includes('sell')) state.positions[i].signal = 'SELL';
+          else if (l.includes('hold')) state.positions[i].signal = 'HOLD';
+          else if (l.includes('watch')) state.positions[i].signal = 'WATCH';
+        }
+      });
+    });
+    save();
+    renderPortfolio();
+
+  } catch(err) {
+    output.className = 'ai-output';
+    output.textContent = 'Error: ' + err.message;
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🤖 AI Analyze Positions';
 }
 
-// ═══ EXPORT ═══
-function exportCSV() {
-  var rows = [['Market','Dir','Entry¢','Current¢','Contracts','Cost$','P&L$','Return%','Category','Expiry','Thesis','Added']];
-  S.positions.forEach(function(p) {
-    var cost = (p.entry/100)*p.qty, cv = (p.curr/100)*p.qty, pnl = cv-cost;
-    var ret = cost > 0 ? ((pnl/cost)*100).toFixed(1) : '0';
-    rows.push([p.name,p.dir,p.entry,p.curr,p.qty,cost.toFixed(2),pnl.toFixed(2),ret,p.cat,p.expiry,p.thesis,p.added]);
-  });
-  rows.push([],['Bankroll','$'+S.bank],['Tax Rate',S.tax+'%'],['Day',S.day],['Exported',new Date().toLocaleString()]);
-  download('kalshi-' + new Date().toISOString().slice(0,10) + '.csv', rows.map(function(r) { return r.map(function(c) { return '"' + String(c).replace(/"/g,'""') + '"'; }).join(','); }).join('\n'), 'text/csv');
-  showToast('📥 CSV downloaded!');
-}
+// ═══════════════════════════════════
+// PROJECTOR
+// ═══════════════════════════════════
+function drawProjection() {
+  const start = parseFloat(document.getElementById('pj-start').value) || 100;
+  const rate = parseFloat(document.getElementById('pj-rate').value) / 100;
+  const days = parseInt(document.getElementById('pj-days').value) || 35;
+  const taxRate = parseFloat(document.getElementById('pj-tax').value) / 100;
 
-function exportJSON() {
-  download('kalshi-backup-' + new Date().toISOString().slice(0,10) + '.json', JSON.stringify(S, null, 2), 'application/json');
-  showToast('📥 JSON downloaded!');
-}
+  // Gross values (what account shows)
+  const vals = [start];
+  for (let i = 1; i <= days; i++) vals.push(+(vals[i-1] * (1 + rate)).toFixed(2));
 
-function download(name, content, type) {
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], {type: type}));
-  a.download = name; a.click();
-}
+  // After-tax net profit
+  const aftertaxFinal = start + (vals[days] - start) * (1 - taxRate);
 
-// ═══ PROJECTOR ═══
-function setRate(r) { document.getElementById('pj-rate').value = r; drawProj(); }
-function drawProj() {
-  var start = parseFloat(document.getElementById('pj-start').value) || 100;
-  var rate  = parseFloat(document.getElementById('pj-rate').value) / 100;
-  var days  = parseInt(document.getElementById('pj-days').value) || 302;
-  var tax   = parseFloat(document.getElementById('pj-tax').value) / 100;
-  var vals  = [start];
-  for (var i = 1; i <= days; i++) vals.push(+(vals[i-1] * (1+rate)).toFixed(2));
-  var net   = vals.map(function(v) { return start + (v-start) * (1-tax); });
-  var W=400, H=200, px=30, py=20;
-  var maxV  = Math.max.apply(null, vals.concat([587000]));
-  var toX   = function(i) { return px + (i/days) * (W-px*2); };
-  var toY   = function(v) { return H - py - ((Math.log(v)-Math.log(start)) / (Math.log(maxV)-Math.log(start))) * (H-py*2); };
-  var gpts  = vals.map(function(v,i) { return toX(i) + ',' + toY(v); }).join(' ');
-  document.getElementById('proj-svg').innerHTML = '<polyline points="' + gpts + '" fill="none" stroke="var(--green)" stroke-width="2.5"/>';
-  var finalNet = net[days];
-  document.getElementById('proj-result').innerHTML = '<div style="font-family:Fredoka One,cursive;font-size:1.1rem;color:var(--green);">After ' + days + ' days @ ' + Math.round(rate*100) + '%/day<br>Gross: $' + vals[days].toLocaleString() + '<br>After ' + (tax*100) + '% tax: $' + finalNet.toLocaleString(undefined,{maximumFractionDigits:0}) + '</div>';
-  var tbl = '';
-  for (var j = 1; j <= Math.min(days, 60); j++) {
-    var v = vals[j], n = net[j];
-    var col = n >= 587000 ? 'var(--yellow)' : n >= 100000 ? 'var(--green)' : n >= 10000 ? 'var(--blue)' : 'var(--dim)';
-    tbl += '<div style="background:rgba(255,255,255,0.04);border-radius:6px;padding:4px 8px;font-size:0.72rem;font-weight:700;color:' + col + ';">Day ' + j + ': $' + v.toLocaleString() + '</div>';
+  const target2x = start * 2; // gross 2x
+  const targetAfterTax = start + start * (1 / (1 - taxRate)); // after-tax 2x (net)
+
+  const W = 500, H = 200, px = 40, py = 20;
+  const maxV = Math.max(...vals, targetAfterTax);
+  const toX = i => px + (i / days) * (W - px * 2);
+  const toY = v => H - py - ((v - start) / (maxV - start || 1)) * (H - py * 2);
+
+  const pts = vals.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
+  const areaPoints = `${toX(0)},${H - py} ${pts} ${toX(days)},${H - py}`;
+
+  const t2xY = toY(target2x);
+  const tatY = toY(targetAfterTax);
+
+  let dayHit2x = vals.findIndex(v => v >= target2x);
+  let dayHitAfterTax = -1;
+  for (let i = 0; i <= days; i++) {
+    const net = start + (vals[i] - start) * (1 - taxRate);
+    if (net >= start * 2 && dayHitAfterTax === -1) dayHitAfterTax = i;
+  }
+
+  const svg = `
+    <defs>
+      <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#e8ff47" stop-opacity="0.2"/>
+        <stop offset="100%" stop-color="#e8ff47" stop-opacity="0.01"/>
+      </linearGradient>
+    </defs>
+    <!-- Target lines -->
+    <line x1="${px}" y1="${t2xY}" x2="${W-px}" y2="${t2xY}" stroke="#3d8eff" stroke-width="1" stroke-dasharray="5,4" opacity="0.5"/>
+    <text x="${W-px+4}" y="${t2xY+4}" fill="#3d8eff" font-size="9" font-family="DM Mono">2× gross</text>
+    <line x1="${px}" y1="${tatY}" x2="${W-px}" y2="${tatY}" stroke="#e8ff47" stroke-width="1" stroke-dasharray="5,4" opacity="0.6"/>
+    <text x="${W-px+4}" y="${tatY+4}" fill="#e8ff47" font-size="9" font-family="DM Mono">2× net</text>
+    <!-- Area fill -->
+    <polygon points="${areaPoints}" fill="url(#fillGrad)"/>
+    <!-- Main line -->
+    <polyline points="${pts}" fill="none" stroke="#e8ff47" stroke-width="2"/>
+    <!-- Start/end dots -->
+    <circle cx="${toX(0)}" cy="${toY(start)}" r="4" fill="#e8ff47"/>
+    <circle cx="${toX(days)}" cy="${toY(vals[days])}" r="4" fill="#e8ff47"/>
+    ${dayHit2x > 0 ? `<circle cx="${toX(dayHit2x)}" cy="${toY(target2x)}" r="5" fill="none" stroke="#3d8eff" stroke-width="2"/>` : ''}
+    ${dayHitAfterTax > 0 ? `<circle cx="${toX(dayHitAfterTax)}" cy="${toY(target2x)}" r="6" fill="none" stroke="#e8ff47" stroke-width="2"/>` : ''}
+    <!-- Axis labels -->
+    <text x="${toX(0)}" y="${H-2}" fill="#3d4a5c" font-size="9" font-family="DM Mono">D0</text>
+    <text x="${toX(Math.floor(days/2))}" y="${H-2}" fill="#3d4a5c" font-size="9" font-family="DM Mono" text-anchor="middle">D${Math.floor(days/2)}</text>
+    <text x="${toX(days)}" y="${H-2}" fill="#3d4a5c" font-size="9" font-family="DM Mono" text-anchor="end">D${days}</text>
+  `;
+  document.getElementById('proj-svg').innerHTML = svg;
+
+  // Results
+  const afterTaxFinalVal = start + (vals[days] - start) * (1 - taxRate);
+  document.getElementById('proj-results').innerHTML = `
+    <div class="proj-res-box"><div class="proj-res-val" style="color:var(--a1)">$${vals[days].toFixed(0)}</div><div class="proj-res-lbl">Gross on Day ${days}</div></div>
+    <div class="proj-res-box"><div class="proj-res-val" style="color:var(--a4)">$${afterTaxFinalVal.toFixed(0)}</div><div class="proj-res-lbl">After Tax</div></div>
+    <div class="proj-res-box"><div class="proj-res-val" style="color:var(--a2)">${dayHitAfterTax > 0 ? 'Day ' + dayHitAfterTax : '>Day ' + days}</div><div class="proj-res-lbl">2× After Tax</div></div>
+  `;
+
+  // Table
+  let tbl = '';
+  for (let i = 1; i <= days; i++) {
+    const v = vals[i];
+    const net = start + (v - start) * (1 - taxRate);
+    const is2x = net >= start * 2;
+    tbl += `<div style="background:${is2x ? 'rgba(232,255,71,0.1)' : 'var(--s2)'};border:1px solid ${is2x ? 'rgba(232,255,71,0.3)' : 'var(--border)'};border-radius:5px;padding:7px;text-align:center;">
+      <div style="font-family:'DM Mono',monospace;font-size:0.55rem;color:var(--dim);">Day ${i}</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:1rem;color:${is2x ? 'var(--a1)' : 'var(--bright)'};">$${v.toFixed(0)}</div>
+      <div style="font-size:0.55rem;color:var(--dim);">~$${net.toFixed(0)} net</div>
+      ${is2x ? '<div style="font-size:0.5rem;color:var(--a1)">✓ 2×</div>' : ''}
+    </div>`;
   }
   document.getElementById('proj-table').innerHTML = tbl;
+
+  // Scenarios
+  const scens = [{r:1,l:'Bear',c:'var(--a3)'},{r:1.5,l:'Slow',c:'var(--mid)'},{r:2,l:'Target',c:'var(--a1)'},{r:3,l:'Bull',c:'var(--a2)'},{r:5,l:'Best',c:'var(--a4)'}];
+  document.getElementById('proj-scenarios').innerHTML = scens.map(s => {
+    const final = start * Math.pow(1 + s.r/100, days);
+    const net = start + (final - start) * (1 - taxRate);
+    return `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:14px;text-align:center;border-top:2px solid ${s.c};">
+      <div style="font-family:'DM Mono',monospace;font-size:0.58rem;color:var(--dim);margin-bottom:6px;">${s.l} (${s.r}%/day)</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:1.5rem;color:${s.c};">$${final.toFixed(0)}</div>
+      <div style="font-size:0.6rem;color:var(--dim);">$${net.toFixed(0)} after tax</div>
+    </div>`;
+  }).join('');
 }
 
-// ═══ SETUP ═══
-function saveProxy() {
-  var url = (document.getElementById('proxy-input').value || '').trim();
-  if (!url || !url.startsWith('http')) { showToast('⚠️ Enter a valid https:// URL', 'var(--yellow)'); return; }
-  localStorage.setItem('kft-proxy', url);
-  window.KALSHI_PROXY = url;
-  _marketCache = null; // clear cache when proxy changes
-  updateSetupStatus(); showToast('✅ Proxy URL saved!');
+// ═══════════════════════════════════
+// CHECKLIST
+// ═══════════════════════════════════
+const CHK_ITEMS = [
+  'I found a specific, verifiable news signal that directly affects this Kalshi market.',
+  'The market is currently mispiced by at least 8–10¢ vs. my fair value estimate.',
+  'I checked liquidity — there is enough volume to enter my full position and exit cleanly.',
+  'My position size is ≤10–12% of current bankroll (Tier 1) or ≤6% (Tier 3 speculative).',
+  'I have set a specific exit target price AND a stop-loss price before entering.',
+  'I understand the worst case: if wrong, the loss is acceptable and does not break my daily loss limit.',
+  'This trade is NOT correlated with another open position in my current portfolio.',
+  'I am NOT trading to recover a loss, out of FOMO, or from boredom.',
+  'I have completed the Daily Brief and this play appeared in or aligns with it.'
+];
+
+let chkState = {};
+function renderChecklist() {
+  const el = document.getElementById('chk-list');
+  el.innerHTML = CHK_ITEMS.map((txt, i) => `
+    <div class="chk-item ${chkState[i] ? 'done' : ''}" onclick="toggleChk(${i})">
+      <div class="chk-box">${chkState[i] ? '✓' : ''}</div>
+      <div class="chk-text">${txt}</div>
+    </div>
+  `).join('');
+  const done = Object.values(chkState).filter(Boolean).length;
+  const sc = document.getElementById('chk-score');
+  sc.textContent = done + '/' + CHK_ITEMS.length;
+  sc.style.color = done === CHK_ITEMS.length ? 'var(--a4)' : done >= 6 ? 'var(--a1)' : 'var(--dim)';
 }
-
-async function testProxy() {
-  var url = (document.getElementById('proxy-input').value || '').trim() || localStorage.getItem('kft-proxy') || '';
-  var res = document.getElementById('proxy-result');
-  if (!url) { res.textContent = '⚠️ Enter your Worker URL first.'; res.style.color = 'var(--yellow)'; return; }
-  res.innerHTML = '⏳ Testing Claude API...'; res.style.color = 'var(--mid)';
-
-  var claudeOk = false;
-  try {
-    var r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:20, messages:[{role:'user', content:'Reply OK'}]})});
-    var d = JSON.parse(await r.text());
-    claudeOk = !!(d.content && d.content.length);
-  } catch(e) { claudeOk = false; }
-
-  res.innerHTML = (claudeOk ? '✅' : '❌') + ' Claude API &nbsp;|&nbsp; ⏳ Testing Kalshi...';
-
-  var kalshiResult = '';
-  try {
-    var base = url.replace(/\/$/, '');
-    var kr = await fetch(base + '/kalshi-all');
-    var kd = await kr.json();
-    var markets = kd.markets || [];
-    var count = markets.length;
-    if (count > 0) {
-      var sample = markets.slice(0, 4).map(function(m) { return '• ' + (m.title || m.question || m.ticker || '?').slice(0, 50); }).join('<br>');
-      var hasPrice = markets[0] && (markets[0].yes_ask != null || markets[0].last_price != null);
-      kalshiResult = '✅ Kalshi live feed working!<br>'
-        + '<div style="font-size:0.75rem;color:var(--mid);margin:5px 0;">📊 ' + (kd.total||'?') + ' fetched → ' + (kd.filtered||'?') + ' sports removed → <strong style="color:var(--green);">' + count + ' clean markets</strong></div>'
-        + '<div style="font-size:0.73rem;color:var(--mid);line-height:1.7;">' + sample + '</div>'
-        + '<div style="margin-top:5px;font-size:0.75rem;color:' + (hasPrice?'var(--green)':'var(--yellow)') + ';">' + (hasPrice ? '✅ Live prices confirmed!' : '⚠️ No prices in response — Kalshi may require auth') + '</div>';
-      _marketCache = markets; _marketCacheTime = Date.now(); // cache from test
-    } else {
-      kalshiResult = '⚠️ 0 clean markets returned.<br><div style="font-size:0.75rem;color:var(--mid);">Total: ' + (kd.total||'?') + ' | Sports filtered: ' + (kd.filtered||'?') + '</div>';
-    }
-  } catch(e) {
-    kalshiResult = '❌ Kalshi feed failed: ' + e.message + '<br><div style="font-size:0.75rem;color:var(--mid);">Redeploy your Cloudflare Worker with the latest code.</div>';
-  }
-
-  res.innerHTML = '<div style="margin-bottom:8px;">' + (claudeOk ? '✅ <strong>Claude API: Working!</strong>' : '❌ <strong>Claude API: Failed</strong>') + '</div>'
-    + '<div>' + kalshiResult + '</div>'
-    + (claudeOk ? '<div style="margin-top:8px;color:var(--green);font-weight:800;">Ready to trade! 🚀</div>' : '');
-  res.style.color = claudeOk ? 'var(--green)' : 'var(--red)';
-}
-
-async function testKalshiSearch() {
-  var url = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
-  if (!url) { alert('No proxy URL set'); return; }
-  try {
-    var base = url.replace(/\/$/, '');
-    var r = await fetch(base + '/kalshi-all');
-    var d = await r.json();
-    var all = d.markets || [];
-    var msg = 'ALL ' + all.length + ' CLEAN MARKETS:\n\n';
-    all.forEach(function(m, i) {
-      msg += (i+1) + '. [' + (m.ticker||'no-ticker') + '] ' + (m.title || m.question || '?') + '\n';
-    });
-    navigator.clipboard.writeText(msg).then(function() {
-      alert(msg.slice(0, 3000) + '\n\n[COPIED TO CLIPBOARD]');
-    }).catch(function() {
-      alert(msg.slice(0, 3000));
-    });
-  } catch(e) { alert('Error: ' + e.message); }
-}
-
-function updateSetupStatus() {
-  var url = localStorage.getItem('kft-proxy') || '';
-  var el = document.getElementById('setup-status');
-  if (!el) return;
-  if (url) {
-    el.innerHTML = '🟢 Proxy saved: <strong style="color:var(--green);">' + url + '</strong><br>Click 🧪 Test Connection to verify.';
-    var inp = document.getElementById('proxy-input');
-    if (inp) inp.value = url;
-  } else {
-    el.innerHTML = '🔴 No proxy configured yet — follow steps 1–5 above.';
-  }
-}
-
-function copyCode() {
-  var code = 'export default {\n  async fetch(request, env) {\n    if (request.method === \'OPTIONS\') return new Response(null, {headers:{\'Access-Control-Allow-Origin\':\'*\',\'Access-Control-Allow-Methods\':\'POST,GET,OPTIONS\',\'Access-Control-Allow-Headers\':\'Content-Type\'}});\n    const corsHeaders = {\'Access-Control-Allow-Origin\':\'*\',\'Content-Type\':\'application/json\'};\n    const url = new URL(request.url);\n    if (url.pathname === \'/kalshi-all\') {\n      try {\n        const resp = await fetch(\'https://api.elections.kalshi.com/trade-api/v2/markets?limit=200&status=open\', {headers:{\'Accept\':\'application/json\',\'User-Agent\':\'Mozilla/5.0\'}});\n        if (!resp.ok) return new Response(JSON.stringify({markets:[],error:\'Kalshi \'+resp.status}),{status:200,headers:corsHeaders});\n        const data = await resp.json();\n        const all = data.markets || [];\n        const SPORTS = [\'lightning\',\'sabres\',\'flames\',\'mammoth\',\'lakers\',\'celtics\',\'heat\',\'bulls\',\'nets\',\'knicks\',\'warriors\',\'clippers\',\'nuggets\',\'suns\',\'mavs\',\'spurs\',\'rockets\',\'pelicans\',\'grizzlies\',\'jazz\',\'kings\',\'blazers\',\'thunder\',\'pacers\',\'bucks\',\'hawks\',\'hornets\',\'wizards\',\'magic\',\'pistons\',\'cavaliers\',\'raptors\',\'sixers\',\'patriots\',\'chiefs\',\'eagles\',\'cowboys\',\'bills\',\'ravens\',\'bengals\',\'browns\',\'steelers\',\'texans\',\'colts\',\'titans\',\'jaguars\',\'broncos\',\'raiders\',\'chargers\',\'seahawks\',\'rams\',\'falcons\',\'panthers\',\'saints\',\'buccaneers\',\'vikings\',\'bears\',\'lions\',\'packers\',\'yankees\',\'dodgers\',\'astros\',\'cubs\',\'braves\',\'mets\',\'phillies\',\'padres\',\'wins by over\',\'points scored\',\'goals scored\',\'rebounds\',\'touchdowns\',\'over 4.5\',\'over 5.5\',\'over 6.5\',\'over 7.5\',\'over 8.5\',\'over 9.5\',\'over 10.5\',\'over 19.5\',\'over 22.5\',\'nba game\',\'nfl game\',\'mlb game\',\'nhl game\',\'ufc\',\'super bowl\',\'stanley cup\',\'nba finals\',\'lopez\',\'okongwu\',\'kuzma\',\'tatum\',\'embiid\',\'curry\',\'durant\',\'giannis\',\'jokic\',\'lillard\',\'wembanyama\',\'mccollum\',\'mahomes\',\'kelce\'];\n        const isSports = t => { const s=\' \'+t.toLowerCase()+\' \'; return SPORTS.some(k=>s.includes(k)); };\n        const clean = all.filter(m=>!isSports(m.title||m.question||\'\'));\n        return new Response(JSON.stringify({markets:clean,count:clean.length,total:all.length,filtered:all.length-clean.length}),{status:200,headers:corsHeaders});\n      } catch(e) { return new Response(JSON.stringify({markets:[],error:e.message}),{status:200,headers:corsHeaders}); }\n    }\n    if (request.method !== \'POST\') return new Response(JSON.stringify({status:\'ok\'}),{status:200,headers:corsHeaders});\n    const body = await request.clone().text();\n    const resp = await fetch(\'https://api.anthropic.com/v1/messages\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\',\'anthropic-version\':\'2023-06-01\',\'x-api-key\':env.ANTHROPIC_API_KEY},body});\n    return new Response(await resp.text(),{status:resp.status,headers:corsHeaders});\n  }\n};';
-  navigator.clipboard.writeText(code).then(function() { showToast('📋 Copied!'); }).catch(function() { showToast('Select and copy manually'); });
-}
-
-// ═══ INIT ═══
-loadState();
-applySettings();
-updateHero();
-renderPortfolio();
-updateSetupStatus();
-drawProj();
-if (S.lastPlays && S.lastPlays.length) renderPlayCards(S.lastPlays);
-if (S.lastBrief) {
-  var bo = document.getElementById('brief-out');
-  bo.className = 'ai-box'; bo.textContent = S.lastBrief;
-  if (S.briefTs) document.getElementById('brief-ts').textContent = '🕐 Last: ' + S.briefTs;
-}
+function toggleChk(i) { chkState[i] = !chkState[i]; renderChecklist(); }
+function resetChk() { chkState = {}; renderChecklist(); }
 </script>
 </body>
 </html>
