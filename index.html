@@ -1876,6 +1876,146 @@ async function refreshAllPrices() {
   if (errors) msg += ' (' + errors + ' failed)';
   showToast(msg);
 }
+function setRate(r) {
+  var el = document.getElementById('pj-rate');
+  if (el) { el.value = r; drawProj(); }
+}
+
+function drawProj() {
+  var start  = parseFloat(document.getElementById('pj-start').value) || 100;
+  var rate   = parseFloat(document.getElementById('pj-rate').value)  || 3;
+  var days   = parseInt(document.getElementById('pj-days').value)    || 302;
+  var tax    = parseFloat(document.getElementById('pj-tax').value)   || 22;
+
+  // Cap to sane values
+  days  = Math.min(Math.max(days, 1), 1095);
+  rate  = Math.min(Math.max(rate, 0.1), 50);
+
+  var taxMult = 1 - (tax / 100);
+
+  // Build daily series (apply tax on gains each day after-tax compounding)
+  var vals = [start];
+  for (var i = 0; i < days; i++) {
+    var prev  = vals[vals.length - 1];
+    var gross = prev * (rate / 100);
+    var net   = gross * taxMult;
+    vals.push(prev + net);
+  }
+
+  var final    = vals[vals.length - 1];
+  var goalEl   = document.getElementById('proj-result');
+  var tableEl  = document.getElementById('proj-table');
+  var svg      = document.getElementById('proj-svg');
+
+  // ── Summary line ──────────────────────────────────────────────────────
+  goalEl.innerHTML =
+    '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;">' +
+      '<div style="text-align:center;">' +
+        '<div style="font-family:IBM Plex Mono,monospace;font-size:1.4rem;font-weight:800;color:var(--green);">$' + fmt(final) + '</div>' +
+        '<div style="font-size:0.7rem;color:var(--mid);">After ' + days + ' days @ ' + rate + '%/day</div>' +
+      '</div>' +
+      '<div style="text-align:center;">' +
+        '<div style="font-family:IBM Plex Mono,monospace;font-size:1.4rem;font-weight:800;color:var(--yellow);">' + (((final/start)-1)*100).toFixed(0) + 'x</div>' +
+        '<div style="font-size:0.7rem;color:var(--mid);">Total return</div>' +
+      '</div>' +
+      '<div style="text-align:center;">' +
+        '<div style="font-family:IBM Plex Mono,monospace;font-size:1.4rem;font-weight:800;color:var(--dim);">-$' + fmt(final - vals[vals.length-1] / taxMult * (final/start)) + '</div>' +
+        '<div style="font-size:0.7rem;color:var(--mid);">Est. tax drag</div>' +
+      '</div>' +
+    '</div>';
+
+  // ── SVG Chart ─────────────────────────────────────────────────────────
+  var W = 800, H = 200, PAD = 40;
+  var maxVal = final;
+  var minVal = start;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + (H + PAD));
+
+  // Sample ~100 points for smooth curve
+  var step   = Math.max(1, Math.floor(days / 100));
+  var points = [];
+  for (var d = 0; d <= days; d += step) {
+    var x = PAD + (d / days) * (W - PAD * 2);
+    var y = PAD + (1 - (vals[d] - minVal) / (maxVal - minVal)) * (H - PAD);
+    points.push(x.toFixed(1) + ',' + y.toFixed(1));
+  }
+  // Always include final point
+  var fx = PAD + (W - PAD * 2);
+  var fy = PAD + (1 - (final - minVal) / (maxVal - minVal)) * (H - PAD);
+  points.push(fx.toFixed(1) + ',' + fy.toFixed(1));
+
+  // Gradient fill under curve
+  var fillPts = points.join(' ');
+  var firstX  = (PAD).toFixed(1);
+  var baseY   = (H).toFixed(1);
+  var polyPts = firstX + ',' + baseY + ' ' + fillPts + ' ' + fx.toFixed(1) + ',' + baseY;
+
+  svg.innerHTML =
+    '<defs>' +
+      '<linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="#00d68f" stop-opacity="0.35"/>' +
+        '<stop offset="100%" stop-color="#00d68f" stop-opacity="0.02"/>' +
+      '</linearGradient>' +
+    '</defs>' +
+    // Grid lines
+    [0.25, 0.5, 0.75].map(function(f) {
+      var gy = (PAD + (1 - f) * (H - PAD)).toFixed(1);
+      var gv = minVal + f * (maxVal - minVal);
+      return '<line x1="' + PAD + '" y1="' + gy + '" x2="' + (W-PAD) + '" y2="' + gy +
+             '" stroke="#ffffff10" stroke-width="1"/>' +
+             '<text x="' + (PAD - 4) + '" y="' + (parseFloat(gy)+4) + '" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">$' + fmtShort(gv) + '</text>';
+    }).join('') +
+    // Fill
+    '<polygon points="' + polyPts + '" fill="url(#cg)"/>' +
+    // Line
+    '<polyline points="' + fillPts + '" fill="none" stroke="#00d68f" stroke-width="2" stroke-linejoin="round"/>' +
+    // Milestone dots: 10x, 100x, 1000x
+    [10, 100, 1000, 5000].map(function(mult) {
+      var target = start * mult;
+      if (target > final * 1.05) return '';
+      // Find day when we hit it
+      var hitDay = -1;
+      for (var d2 = 0; d2 < vals.length; d2++) {
+        if (vals[d2] >= target) { hitDay = d2; break; }
+      }
+      if (hitDay < 0) return '';
+      var mx = PAD + (hitDay / days) * (W - PAD * 2);
+      var my = PAD + (1 - (target - minVal) / (maxVal - minVal)) * (H - PAD);
+      return '<circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) + '" r="4" fill="#ffd740"/>' +
+             '<text x="' + (mx+6).toFixed(1) + '" y="' + (my-6).toFixed(1) + '" fill="#ffd740" font-size="9" font-family="IBM Plex Mono,monospace">' + mult + 'x · Day ' + hitDay + '</text>';
+    }).join('') +
+    // Axis labels
+    '<text x="' + PAD + '" y="' + (H + PAD - 4) + '" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">Day 0</text>' +
+    '<text x="' + (W - PAD) + '" y="' + (H + PAD - 4) + '" text-anchor="end" fill="#ffffff40" font-size="9" font-family="IBM Plex Mono,monospace">Day ' + days + '</text>';
+
+  // ── Milestone table ───────────────────────────────────────────────────
+  var milestones = [1,5,10,30,60,90,120,180,240,302,365].filter(function(d){ return d <= days; });
+  // Add custom days if not in list
+  if (milestones.indexOf(days) < 0) milestones.push(days);
+  milestones.sort(function(a,b){return a-b;});
+
+  tableEl.innerHTML = milestones.map(function(d) {
+    var v = vals[d] || vals[vals.length-1];
+    var mult = (v / start).toFixed(1);
+    return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;text-align:center;">' +
+      '<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:var(--mid);">Day ' + d + '</div>' +
+      '<div style="font-family:IBM Plex Mono,monospace;font-size:0.88rem;font-weight:700;color:var(--green);">$' + fmt(v) + '</div>' +
+      '<div style="font-size:0.68rem;color:var(--dim);">' + mult + 'x</div>' +
+    '</div>';
+  }).join('');
+}
+
+function fmt(n) {
+  if (n >= 1e9)  return (n/1e9).toFixed(2)  + 'B';
+  if (n >= 1e6)  return (n/1e6).toFixed(2)  + 'M';
+  if (n >= 1e3)  return (n/1e3).toFixed(1)  + 'K';
+  return n.toFixed(2);
+}
+function fmtShort(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(0) + 'K';
+  return n.toFixed(0);
+}
+
 // ── PAGE INIT — runs once on load ─────────────────────────────────────────
 (function init() {
   // Load proxy URL into settings field if saved
@@ -1912,6 +2052,9 @@ async function refreshAllPrices() {
   if (S.positions && S.positions.length) {
     renderPositions();
   }
+
+  // Draw projector on load
+  drawProj();
 
   // Show morning tab by default
   showTab('morning');
