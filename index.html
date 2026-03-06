@@ -828,8 +828,53 @@ async function generatePlays() {
   btn.textContent = '⚡ Generate Plays';
 }
 
+function renderPlayCards(plays) {
+  const container = document.getElementById('plays-out');
+  if (!plays || !plays.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);">No plays found with sufficient edge.</div>';
+    return;
+  }
+  const tierColors = { 1: 'var(--green)', 2: 'var(--yellow)', 3: 'var(--orange)' };
+  const riskColors = { LOW: 'var(--green)', MEDIUM: 'var(--yellow)', HIGH: 'var(--red)' };
+  container.innerHTML = '<div class="plays-grid">' + plays.map(p => {
+    const isHeld = (S.positions||[]).some(pos => pos.market && pos.market.toLowerCase().includes((p.market||'').toLowerCase().slice(0,10)));
+    const confPct = Math.min(100, Math.max(0, p.confidence || 50));
+    const dirClass = p.direction === 'YES' ? 'pp-yes' : 'pp-no';
+    const tc = tierColors[p.tier] || 'var(--blue)';
+    const rc = riskColors[p.risk] || 'var(--yellow)';
+    const expRet = p.edge && p.size ? '+' + (p.edge * p.size / 100).toFixed(0) + ' (' + ((p.edge / (p.entryTarget||50)) * 100).toFixed(1) + '%)' : '';
+    return `
+    <div class="play-card${isHeld ? ' held' : ''}">
+      <div class="play-num">${p.num || ''}</div>
+      <div class="play-header">
+        <div class="play-market">${p.market || 'Market'}</div>
+        <div class="play-cat">${p.category || ''} &middot; TIER ${p.tier || '?'} &middot; ${p.expiryEst || ''}</div>
+      </div>
+      <div class="play-row">
+        <span class="play-pill ${dirClass}">${p.direction || 'YES'}</span>
+        <span class="play-pill pp-price">Entry ~${p.entryTarget || '?'}¢</span>
+        <span class="play-pill pp-price">Fair ~${p.fairValue || '?'}¢</span>
+        <span class="play-pill pp-edge">+${p.edge || '?'}¢ edge</span>
+        <span class="play-pill pp-size">$${p.size || '?'} position</span>
+      </div>
+      <div class="play-bar"><div class="play-fill" style="width:${confPct}%;background:${tc}"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--dim);margin-bottom:6px;">
+        <span>Confidence: <strong style="color:${tc}">${confPct}%</strong></span>
+        <span>Risk: <strong style="color:${rc}">${p.risk||'?'}</strong></span>
+        ${expRet ? `<span>Exp. Return: <strong style="color:${tc}">${expRet}</strong></span>` : ''}
+      </div>
+      <div style="font-size:0.72rem;color:var(--mid);margin-bottom:10px;text-align:center;">${p.reason||''}</div>
+      <div style="display:flex;gap:6px;justify-content:center;">
+        <button onclick="addPlay(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;">+ Add to Portfolio</button>
+        <button onclick="watchPlay(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="background:var(--card2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">Watch</button>
+        <button onclick="this.closest('.play-card').style.display='none'" style="background:var(--card2);color:var(--dim);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">Skip</button>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
 async function analyzePortfolio() {
-  if (!state.positions.length) {
+  if (!S.positions.length) {
     alert('No positions to analyze. Add some positions first.');
     return;
   }
@@ -843,7 +888,7 @@ async function analyzePortfolio() {
   output.className = 'ai-output loading';
   output.innerHTML = '<div class="spinner"></div> AI analyzing your current positions...';
 
-  const posText = state.positions.map(p => {
+  const posText = S.positions.map(p => {
     const cost = (p.entry / 100) * p.qty;
     const currVal = (p.curr / 100) * p.qty;
     const pnl = currVal - cost;
@@ -873,7 +918,7 @@ Search for latest news relevant to each position. For each position give:
 Then give an overall portfolio health summary:
 - Correlation risks (positions that might resolve similarly)
 - Overall risk exposure
-- Suggested moves to optimize for 2%/day target on $${state.bank} bankroll
+- Suggested moves to optimize for 2%/day target on $${S.bank} bankroll
 
 Be direct and specific. Format clearly.`
         }]
@@ -887,14 +932,14 @@ Be direct and specific. Format clearly.`
 
     // Try to auto-update signals from analysis
     const lines = text.split('\n');
-    state.positions.forEach((pos, i) => {
+    S.positions.forEach((pos, i) => {
       const marketName = pos.market.toLowerCase().slice(0, 15);
       lines.forEach(line => {
         const l = line.toLowerCase();
         if (l.includes(marketName)) {
-          if (l.includes('sell')) state.positions[i].signal = 'SELL';
-          else if (l.includes('hold')) state.positions[i].signal = 'HOLD';
-          else if (l.includes('watch')) state.positions[i].signal = 'WATCH';
+          if (l.includes('sell')) S.positions[i].signal = 'SELL';
+          else if (l.includes('hold')) S.positions[i].signal = 'HOLD';
+          else if (l.includes('watch')) S.positions[i].signal = 'WATCH';
         }
       });
     });
