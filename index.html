@@ -375,7 +375,7 @@ function updateHero() {
   renderPositions();
 }
 
-async function safeJSONraw, fallback) {
+function safeJSON(raw, fallback) {
   if (!raw) return fallback;
   // Strip markdown code fences
   var cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
@@ -898,21 +898,56 @@ function importPortfolio(event) {
   reader.onload = function(e) {
     try {
       const text = e.target.result;
-
-      // JSON import
       if (file.name.endsWith('.json')) {
         const data = JSON.parse(text);
         const positions = Array.isArray(data) ? data : (data.positions || []);
         S.positions = [...(S.positions||[]), ...positions];
         saveState(); updateHero(); renderPositions(); showTab('portfolio');
-        showToast('✅ Imported ' + positions.length + ' positions');
+        showToast('\u2705 Imported ' + positions.length + ' positions');
         return;
       }
-
-      // Kalshi CSV export format:
-      // marketTicker, seriesTitle, eventTitle, marketTitle, closeDate,
-      // volume, yesPrice, noPrice, lastTradePrice, position, averagePrice,
-      // exposure, positionReturns, lockedInReturns, tota
+      // Kalshi CSV: marketTicker,seriesTitle,eventTitle,marketTitle,closeDate,
+      // volume,yesPrice,noPrice,lastTradePrice,position,averagePrice,exposure,positionReturns
+      const rawLines = text.replace(/\r/g,'').split('\n');
+      const rawHeaders = rawLines[0].replace(/^\uFEFF/,'');
+      const headers = rawHeaders.split(',').map(h => h.trim().replace(/^"|"$/g,'').toLowerCase().replace(/[^a-z]/g,''));
+      const get = (vals, name) => (vals[headers.indexOf(name)]||'').trim().replace(/^"|"$/g,'');
+      const positions = [];
+      for (let i = 1; i < rawLines.length; i++) {
+        const vals = rawLines[i].split(',');
+        if (!vals[0]) continue;
+        const ticker = get(vals,'marketticker');
+        const posStr = get(vals,'position');
+        const posMatch = posStr.match(/(Yes|No)\s*x\s*(\d+)/i);
+        const direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
+        const qty = posMatch ? parseInt(posMatch[2]) : 0;
+        const entry = parseFloat((get(vals,'averageprice')||'0').replace('\u00a2','').replace(/[^0-9.]/g,'')) || 0;
+        const size = parseFloat((get(vals,'exposure')||'0').replace('$','').replace(/[^0-9.]/g,'')) || 0;
+        const pnl = parseFloat((get(vals,'positionreturns')||'0').replace('$','').replace(/[^0-9.\-]/g,'')) || 0;
+        const yesPrice = parseFloat((get(vals,'yesprice')||'0').replace('\u00a2','').replace(/[^0-9.]/g,'')) || 0;
+        if (!ticker) continue;
+        positions.push({
+          num: Date.now()+i, market: get(vals,'eventtitle')||get(vals,'markettitle')||ticker,
+          ticker, category: get(vals,'seriestitle')||'Other',
+          direction, qty, entry, size, pnl,
+          currentPrice: yesPrice||entry,
+          reason: get(vals,'markettitle')||'',
+          added: get(vals,'closedate')||new Date().toLocaleDateString(),
+          url: 'https://kalshi.com/markets/'+ticker.toLowerCase().split('-')[0]
+        });
+      }
+      if (!positions.length) { showToast('\u26a0\ufe0f No valid rows found'); return; }
+      S.positions = [...(S.positions||[]), ...positions];
+      saveState(); updateHero(); renderPositions(); showTab('portfolio');
+      showToast('\u2705 Imported ' + positions.length + ' Kalshi positions');
+    } catch(err) {
+      showToast('\u274c Import failed: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
 function renderPositions() {
   const list = document.getElementById('pos-list');
   if (!list) return;
@@ -961,8 +996,10 @@ function renderPositions() {
         <button onclick="removePosition(${i})" style="font-size:0.65rem;padding:5px 9px;background:transparent;color:#484f58;border:1px solid #21262d;border-radius:4px;cursor:pointer;font-family:DM Mono,monospace;">✕</button>
       </div>
     </div>`;
-  }).join(''
-async function removePositiontion(i) {
+  }).join('');
+}
+
+function removePosition(i) {
   S.positions.splice(i, 1);
   saveState();
   renderPositions();
