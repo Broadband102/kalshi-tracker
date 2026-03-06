@@ -1601,7 +1601,7 @@ function renderPositions() {
         '<div class="pos-pnl-lbl">unrealised P&L</div>' +
       '</div>' +
       '<div style="display:flex;gap:6px;">' +
-        '<a href="' + p.url + '" target="_blank" class="pbtn pbtn-buy" style="padding:6px 10px;font-size:0.72rem;">\u2197</a>' +
+        '<a href="' + ((p.url||'').replace(/\/+$/,'') + '/' + (p.ticker||'').toLowerCase()) + '" target="_blank" class="pbtn pbtn-buy" style="padding:6px 10px;font-size:0.72rem;">\u2197</a>' +
         '<button onclick="removePosition(' + i + ')" class="pbtn pbtn-skip" style="padding:6px 10px;">\u2715</button>' +
       '</div>' +
     '</div>';
