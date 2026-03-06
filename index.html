@@ -1299,95 +1299,118 @@ function importPortfolio(event) {
     try {
       var text = e.target.result;
 
-      // ── JSON ──────────────────────────────────────────────
+      // ── JSON ──────────────────────────────────────────────────────────
       if (file.name.toLowerCase().endsWith('.json')) {
         var data = JSON.parse(text);
         var arr = Array.isArray(data) ? data : (data.positions || []);
-        S.positions = (S.positions || []).concat(arr);
+        S.positions = arr;
         saveState(); updateHero(); renderPositions(); showTab('portfolio');
         showToast('\u2705 Imported ' + arr.length + ' positions');
         return;
       }
 
-      // ── KALSHI CSV ────────────────────────────────────────
-      // Expected columns (Kalshi portfolio export):
-      //   marketTicker | seriesTitle | eventTitle | marketTitle | closeDate
-      //   volume | yesPrice | noPrice | lastTradePrice | position
-      //   averagePrice | exposure | positionReturns | lockedInReturns | totalReturns
-      var lines = text.replace(/\r/g, '').split('\n');
-
-      // Parse header — strip BOM, quotes, lowercase
-      var headers = lines[0]
-        .replace(/^\uFEFF/, '')
-        .split(',')
-        .map(function(h) { return h.trim().replace(/"/g, '').toLowerCase(); });
-
-      // Helper: get cell value by column name (exact lowercase match)
-      function cell(vals, colName) {
-        var idx = headers.indexOf(colName);
-        if (idx < 0) return '';
-        return (vals[idx] || '').trim().replace(/"/g, '');
+      // ── PROPER CSV PARSER (handles quoted fields with commas inside) ──
+      // e.g. "Sep 11, 2026 at 7:25am CDT" must stay as one field
+      function parseCSVLine(line) {
+        var fields = [];
+        var cur = '', inQuote = false;
+        for (var i = 0; i < line.length; i++) {
+          var ch = line[i];
+          if (ch === '"') {
+            inQuote = !inQuote;
+          } else if (ch === ',' && !inQuote) {
+            fields.push(cur.trim());
+            cur = '';
+          } else {
+            cur += ch;
+          }
+        }
+        fields.push(cur.trim());
+        return fields;
       }
 
-      // Strip currency symbols and parse number
-      function money(s) { return parseFloat(s.replace(/[^0-9.\-]/g, '')) || 0; }
+      var rawLines = text.replace(/\r/g, '').split('\n');
+      // Strip BOM from first line
+      rawLines[0] = rawLines[0].replace(/^\uFEFF/, '');
+
+      // Parse headers — strip quotes, lowercase, strip non-alpha
+      var headers = parseCSVLine(rawLines[0]).map(function(h) {
+        return h.replace(/"/g, '').toLowerCase().replace(/[^a-z]/g, '');
+      });
+
+      // Map exact Kalshi column names (after stripping non-alpha)
+      // marketticker | seriestitle | eventtitle | markettitle | closedate
+      // volume | yesprice | noprice | lasttradeprice | position
+      // averageprice | exposure | positionreturns | lockedinreturns | totalreturns
+      function col(vals, name) {
+        var idx = headers.indexOf(name);
+        return (idx >= 0 && vals[idx]) ? vals[idx].replace(/"/g, '').trim() : '';
+      }
+      function parseCents(s)  { return parseFloat(s.replace(/[^0-9.]/g, '')) || 0; }
+      function parseDollars(s){ return parseFloat(s.replace(/[^0-9.\-]/g, '')) || 0; }
 
       var positions = [];
-      for (var i = 1; i < lines.length; i++) {
-        var vals = lines[i].split(',');
-        if (!vals[0] || !vals[0].trim()) continue;
+      for (var i = 1; i < rawLines.length; i++) {
+        if (!rawLines[i].trim()) continue;
+        var vals = parseCSVLine(rawLines[i]);
 
-        var ticker   = cell(vals, 'marketticker');   // KXCPI-26AUG-T0.2
-        var posStr   = cell(vals, 'position');        // "Yes x 22"
-        var avgPriceS= cell(vals, 'averageprice');    // "45¢"  → avg cost in cents
-        var exposureS= cell(vals, 'exposure');        // "$9.62" → actual $ invested
-        var returnS  = cell(vals, 'positionreturns'); // "+$0.56" → unrealised P&L in $
-        var yesPriceS= cell(vals, 'yesprice');        // "48¢"  → last price on site
-        var series   = cell(vals, 'seriestitle');     // "CPI"
-        var eventTtl = cell(vals, 'eventtitle');      // "CPI in August"
-        var mktTtl   = cell(vals, 'markettitle');     // "Above 0.2%"
-        var closeDate= cell(vals, 'closedate');       // "Sep 11, 2026..."
+        // Pull every field by name — immune to column order
+        var ticker    = col(vals, 'marketticker');   if (!ticker) continue;
+        var series    = col(vals, 'seriestitle');
+        var eventTtl  = col(vals, 'eventtitle');
+        var mktTtl    = col(vals, 'markettitle');
+        var closeDate = col(vals, 'closedate');
+        var posStr    = col(vals, 'position');        // "Yes x 22"
+        var avgPriceS = col(vals, 'averageprice');   // "45¢"
+        var exposureS = col(vals, 'exposure');        // "$9.62"
+        var returnsS  = col(vals, 'positionreturns');// "+$0.56"
+        var yesPriceS = col(vals, 'yesprice');        // "48¢"
 
-        if (!ticker) continue;
+        // Parse position "Yes x 22"
+        var pm = posStr.match(/(yes|no)\s*x\s*(\d+)/i);
+        var direction = pm ? pm[1].toUpperCase() : 'YES';
+        var qty       = pm ? parseInt(pm[2]) : 0;
 
-        // Parse position string "Yes x 22" or "No x 5"
-        var posMatch  = posStr.match(/(yes|no)\s*x\s*(\d+)/i);
-        var direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
-        var qty       = posMatch ? parseInt(posMatch[2]) : 0;
-
-        // Parse numeric values
-        var avgCents  = money(avgPriceS);   // e.g. 45  (cents)
-        var invested  = money(exposureS);   // e.g. 9.62 (dollars) ← REAL amount spent
-        var pnl       = money(returnS);     // e.g. 0.56 (dollars) ← unrealised gain/loss
-        var lastCents = money(yesPriceS);   // e.g. 48  (cents) ← last traded
+        // CORRECT field mapping (verified against actual CSV):
+        var avgCents  = parseCents(avgPriceS);    // 45  (cents — your avg cost)
+        var invested  = parseDollars(exposureS);  // 9.62 (dollars — actual $ spent)
+        var pnl       = parseDollars(returnsS);   // 0.56 (dollars — unrealised P&L)
+        var lastCents = parseCents(yesPriceS);    // 48  (cents — last price)
 
         positions.push({
-          num:          Date.now() + i,
-          ticker:       ticker,
-          market:       eventTtl || mktTtl || ticker,
-          category:     series || 'Other',
-          direction:    direction,
-          qty:          qty,
-          avgCents:     avgCents,   // average entry price in cents
-          invested:     invested,   // ACTUAL dollars spent (from Kalshi exposure field)
-          pnl:          pnl,        // unrealised P&L in dollars
-          liveCents:    lastCents,  // last known price in cents (will refresh from API)
-          added:        closeDate || new Date().toLocaleDateString(),
-          url:          'https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]
+          num:       Date.now() + i,
+          ticker:    ticker,
+          market:    eventTtl || mktTtl || ticker,
+          category:  series || 'Other',
+          direction: direction,
+          qty:       qty,
+          avgCents:  avgCents,   // cents — avg entry cost
+          invested:  invested,   // dollars — real money spent
+          pnl:       pnl,        // dollars — unrealised P&L from CSV
+          liveCents: lastCents,  // cents — last known price (refreshed by API later)
+          added:     closeDate || '',
+          url:       'https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]
         });
       }
 
-      if (!positions.length) { showToast('\u26a0\ufe0f No rows found — check CSV format'); return; }
+      if (!positions.length) {
+        showToast('\u26a0\ufe0f No rows found');
+        return;
+      }
 
-      // Clear old and replace (don't append — re-uploading same CSV doubles it)
+      // REPLACE (not append) so re-uploading same file doesn't double
       S.positions = positions;
-      saveState(); updateHero(); renderPositions(); showTab('portfolio');
-      showToast('\u2705 Loaded ' + positions.length + ' positions · $' +
-        positions.reduce(function(a,p){ return a + p.invested; }, 0).toFixed(2) + ' invested');
+      saveState();
+      updateHero();
+      renderPositions();
+      showTab('portfolio');
+
+      var total = positions.reduce(function(a, p) { return a + p.invested; }, 0);
+      showToast('\u2705 ' + positions.length + ' positions · $' + total.toFixed(2) + ' invested');
 
     } catch(err) {
       showToast('\u274c Import failed: ' + err.message);
-      console.error('importPortfolio error:', err);
+      console.error('CSV import error:', err);
     }
   };
   reader.readAsText(file);
@@ -1570,7 +1593,7 @@ function toggleChk(i) { chkState[i] = !chkState[i]; renderChecklist(); }
 
 async function refreshPlayPrices() {
   var btn = document.getElementById('btn-refresh-plays');
-  if (btn) { btn.disabled = true; btn.textContent = '\u29d7 Refreshing...'; }
+  if (btn) { btn.disabled = true; btn.textContent = '\u29d7 Fetching live prices...'; }
 
   var plays = S.lastPlays || [];
   if (!plays.length) {
@@ -1581,26 +1604,38 @@ async function refreshPlayPrices() {
   var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
   if (!proxy) { showToast('\u26a0\ufe0f Set proxy URL in Setup'); return; }
 
-  var updated = 0;
-  await Promise.all(plays.map(async function(play, i) {
-    if (!play.ticker) return;
-    try {
-      var r = await fetch(proxy + '/kalshi-price?ticker=' + encodeURIComponent(play.ticker));
-      var d = await r.json();
-      if (d.yes_ask != null) {
-        S.lastPlays[i].entryTarget   = d.yes_ask;
-        S.lastPlays[i].liveBid       = d.yes_bid;
-        S.lastPlays[i].edge          = S.lastPlays[i].fairValue - d.yes_ask;
+  try {
+    // Use /kalshi-all — fetches all markets in one call, no per-ticker requests needed
+    var r = await fetch(proxy + '/kalshi-all');
+    var d = await r.json();
+    var markets = d.markets || [];
+
+    // Build a ticker→price lookup map
+    var priceMap = {};
+    markets.forEach(function(m) {
+      if (m.ticker) priceMap[m.ticker] = m;
+    });
+
+    var updated = 0;
+    S.lastPlays.forEach(function(play, i) {
+      var live = priceMap[play.ticker];
+      if (live && live.yes_ask != null) {
+        S.lastPlays[i].entryTarget    = live.yes_ask;
+        S.lastPlays[i].liveBid        = live.yes_bid;
+        S.lastPlays[i].edge           = S.lastPlays[i].fairValue - live.yes_ask;
         S.lastPlays[i].priceRefreshed = new Date().toLocaleTimeString();
         updated++;
       }
-    } catch(e) { /* skip */ }
-  }));
+    });
 
-  saveState();
-  renderPlayCards(S.lastPlays);
+    saveState();
+    renderPlayCards(S.lastPlays);
+    showToast('\u2705 ' + updated + ' of ' + plays.length + ' play prices refreshed from Kalshi');
+  } catch(e) {
+    showToast('\u274c Price refresh failed: ' + e.message);
+  }
+
   if (btn) { btn.disabled = false; btn.textContent = '\ud83d\udd04 Refresh Prices'; }
-  showToast('\u2705 ' + updated + ' play prices updated from Kalshi');
 }
 
 
@@ -1608,131 +1643,133 @@ async function sellAdvisor() {
   var btn = document.getElementById('btn-sell');
   var card = document.getElementById('sell-card');
   var grid = document.getElementById('sell-grid');
-  var summary = document.getElementById('sell-summary');
+  var sumEl = document.getElementById('sell-summary');
 
   btn.disabled = true;
   btn.textContent = '\u29d7 Fetching live prices...';
   card.style.display = 'block';
-  grid.innerHTML = '<div style="color:var(--dim);font-size:0.82rem;padding:10px;">Loading live prices from Kalshi...</div>';
-  summary.innerHTML = '';
+  grid.innerHTML = '<div style="color:var(--dim);font-size:0.82rem;padding:10px;">Fetching live prices from Kalshi...</div>';
+  sumEl.textContent = '';
 
   var positions = S.positions || [];
   if (!positions.length) {
-    grid.innerHTML = '<div style="color:var(--dim);padding:20px;text-align:center;">No positions — import your CSV first</div>';
+    grid.innerHTML = '<div style="color:var(--dim);padding:20px;text-align:center;">No positions — import your Kalshi CSV first</div>';
     btn.disabled = false; btn.textContent = '\ud83d\udd34 Should I Sell?';
     return;
   }
 
   var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
-  if (!proxy) { showToast('\u26a0\ufe0f Set proxy URL in Setup first'); btn.disabled = false; btn.textContent = '\ud83d\udd34 Should I Sell?'; return; }
+  if (!proxy) {
+    showToast('\u26a0\ufe0f Set proxy URL in Setup first');
+    btn.disabled = false; btn.textContent = '\ud83d\udd34 Should I Sell?';
+    return;
+  }
 
-  // ── Step 1: Fetch live prices for every position ──────────────────────
-  var enriched = [];
-  await Promise.all(positions.map(async function(pos, i) {
+  // ── Step 1: Fetch ALL markets in one call, build price map ───────────
+  var priceMap = {};
+  try {
+    var r = await fetch(proxy + '/kalshi-all');
+    var d = await r.json();
+    (d.markets || []).forEach(function(m) {
+      if (m.ticker) priceMap[m.ticker] = m;
+    });
+  } catch(e) {
+    grid.innerHTML = '<div style="color:var(--red);padding:10px;">Failed to fetch live prices: ' + e.message + '</div>';
+    btn.disabled = false; btn.textContent = '\ud83d\udd34 Should I Sell?';
+    return;
+  }
+
+  // ── Step 2: Enrich positions with live data ───────────────────────────
+  var enriched = positions.map(function(pos, i) {
+    var live = priceMap[pos.ticker];
     var data = Object.assign({}, pos);
-    try {
-      var r = await fetch(proxy + '/kalshi-price?ticker=' + encodeURIComponent(pos.ticker));
-      var d = await r.json();
-      if (d.yes_ask != null) {
-        data.liveAsk  = d.yes_ask;   // current buy price
-        data.liveBid  = d.yes_bid;   // current sell price (what you get if you sell YES)
-        data.lastPrice= d.last_price;
-        data.volume24h= d.volume_24h;
-        data.status   = d.status;
-        // Recalc live P&L: selling at yes_bid (what market pays you)
-        if (pos.avgCents && pos.qty) {
-          data.livePnl = ((d.yes_bid - pos.avgCents) / 100) * pos.qty;
-        }
+    if (live) {
+      data.liveAsk   = live.yes_ask;   // what you'd pay to buy more
+      data.liveBid   = live.yes_bid;   // what you get if you SELL now
+      data.vol24h    = live.volume_24h || live.volume;
+      // Live P&L: (current_sell_price - avg_cost) * qty / 100
+      if (pos.avgCents && pos.qty) {
+        data.livePnl = ((live.yes_bid - pos.avgCents) / 100) * pos.qty;
+        S.positions[i].pnl = data.livePnl;
+        S.positions[i].liveCents = live.yes_ask;
       }
-    } catch(e) { /* use cached */ }
-    enriched.push(data);
-  }));
-
-  // Update stored prices
-  enriched.forEach(function(p, i) {
-    if (p.liveAsk) {
-      S.positions[i].liveCents = p.liveAsk;
-      if (p.livePnl !== undefined) S.positions[i].pnl = p.livePnl;
     }
+    return data;
   });
   saveState();
 
-  btn.textContent = '\u29d7 AI analyzing positions...';
-  grid.innerHTML = '<div style="color:var(--dim);font-size:0.82rem;padding:10px;">AI analyzing your positions with live prices...</div>';
+  grid.innerHTML = '<div style="color:var(--dim);font-size:0.82rem;padding:10px;">AI analyzing with live prices...</div>';
+  btn.textContent = '\u29d7 AI analyzing...';
 
-  // ── Step 2: Build position summary for AI ────────────────────────────
+  // ── Step 3: Build context for AI ─────────────────────────────────────
   var posText = enriched.map(function(p) {
-    var liveLine = p.liveAsk
-      ? 'LIVE: buy=' + p.liveAsk + '\u00a2 sell=' + p.liveBid + '\u00a2 vol24h=' + (p.volume24h||'?')
-      : 'LIVE: unavailable';
-    var pnlLine = p.livePnl !== undefined
-      ? (p.livePnl >= 0 ? '+' : '') + '$' + p.livePnl.toFixed(2)
-      : '$' + (p.pnl||0).toFixed(2);
-    return '- ' + p.ticker + ': ' + (p.market||'') +
-           '\n  Direction=' + p.direction + ' Qty=' + p.qty +
-           ' AvgCost=' + (p.avgCents||0) + '\u00a2 Invested=$' + (p.invested||0).toFixed(2) +
-           '\n  ' + liveLine +
-           '\n  UnrealisedP&L=' + pnlLine;
+    var liveStr = p.liveAsk
+      ? 'LIVE buy=' + p.liveAsk + '\u00a2 sell=' + p.liveBid + '\u00a2 vol=' + (p.vol24h||'?')
+      : 'no live data';
+    var pnlStr = (p.livePnl !== undefined ? p.livePnl : p.pnl || 0);
+    return p.ticker + ': ' + (p.market||'') +
+      '\n  ' + p.direction + ' \u00d7' + p.qty + ' @ avg ' + (p.avgCents||0) + '\u00a2' +
+      ' | invested=$' + (p.invested||0).toFixed(2) +
+      '\n  ' + liveStr +
+      '\n  P&L: ' + (pnlStr >= 0 ? '+' : '') + '$' + parseFloat(pnlStr).toFixed(2);
   }).join('\n\n');
 
-  // ── Step 3: Call Claude ───────────────────────────────────────────────
+  // ── Step 4: Ask Claude ────────────────────────────────────────────────
   try {
-    var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    var today = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
     var resp = await fetch(proxy, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1500,
-        tools: [{type:'web_search_20250305', name:'web_search'}],
-        messages: [{role:'user', content:
+        tools: [{type: 'web_search_20250305', name: 'web_search'}],
+        messages: [{role: 'user', content:
           'Today is ' + today + '. You are a Kalshi prediction market advisor.\n\n' +
-          'MY POSITIONS (with live Kalshi prices):\n' + posText + '\n\n' +
+          'MY POSITIONS (live prices from Kalshi API):\n\n' + posText + '\n\n' +
           'Bankroll: $' + S.bank + '\n\n' +
-          'Search for any relevant breaking news that might affect these markets, then give a HOLD/SELL/WATCH call for each position.\n\n' +
-          'Respond ONLY with a JSON object:\n' +
+          'Search for breaking news relevant to these markets, then give HOLD/SELL/WATCH for each.\n\n' +
+          'Respond ONLY with this JSON (no markdown):\n' +
           '{"calls":[{"ticker":"KXCPI-26AUG-T0.2","action":"HOLD","confidence":80,"reason":"one sentence"}],' +
-          '"summary":"2-3 sentence overall portfolio assessment"}'
+          '"summary":"2-3 sentence portfolio assessment"}'
         }]
       })
     });
-
     var data = await resp.json();
     var raw = (data.content||[]).map(function(b){ return b.type==='text' ? b.text : ''; }).join('');
     var clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-    var s = clean.indexOf('{'), e = clean.lastIndexOf('}');
-    if (s < 0 || e < 0) throw new Error('No JSON in response');
-    var result = JSON.parse(clean.slice(s, e+1));
+    var si = clean.indexOf('{'), ei = clean.lastIndexOf('}');
+    if (si < 0 || ei < 0) throw new Error('No JSON in response');
+    var result = JSON.parse(clean.slice(si, ei+1));
 
-    // ── Render calls grid ──────────────────────────────────────────────
-    var actionColors = {HOLD:'var(--green)', SELL:'var(--red)', WATCH:'var(--yellow)'};
+    // ── Render ────────────────────────────────────────────────────────
+    var colors = {HOLD: 'var(--green)', SELL: 'var(--red)', WATCH: 'var(--yellow)'};
     grid.innerHTML = (result.calls||[]).map(function(c) {
       var pos = enriched.find(function(p){ return p.ticker === c.ticker; }) || {};
-      var color = actionColors[c.action] || 'var(--mid)';
+      var col = colors[c.action] || 'var(--mid)';
       var pnlVal = pos.livePnl !== undefined ? pos.livePnl : (pos.pnl||0);
-      var pnlStr = (pnlVal >= 0 ? '+' : '') + '$' + pnlVal.toFixed(2);
-      var pnlColor = pnlVal >= 0 ? 'var(--green)' : 'var(--red)';
-      return '<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ' + color + ';border-radius:8px;padding:14px 16px;margin-bottom:8px;">' +
+      var pnlStr = (pnlVal >= 0 ? '+' : '') + '$' + parseFloat(pnlVal).toFixed(2);
+      var pnlCol = pnlVal >= 0 ? 'var(--green)' : 'var(--red)';
+      return '<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ' + col + ';border-radius:8px;padding:14px 16px;margin-bottom:8px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
           '<div>' +
-            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;font-weight:700;color:var(--text);">' + c.ticker + '</span>' +
-            '<span style="font-size:0.75rem;color:var(--mid);margin-left:8px;">' + (pos.market||'') + '</span>' +
+            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:700;color:var(--text);">' + c.ticker + '</span>' +
+            (pos.market ? '<span style="font-size:0.75rem;color:var(--mid);margin-left:8px;">' + pos.market + '</span>' : '') +
           '</div>' +
           '<div style="display:flex;gap:10px;align-items:center;">' +
-            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;color:' + pnlColor + ';">' + pnlStr + '</span>' +
-            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:800;color:' + color + ';background:' + color.replace(')', ',0.15)').replace('var','rgba').replace('(--','(') + ';padding:3px 10px;border-radius:4px;">' + c.action + '</span>' +
+            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;color:' + pnlCol + ';">' + pnlStr + '</span>' +
+            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.85rem;font-weight:800;padding:3px 12px;border-radius:4px;background:' + col.replace(')', ',0.15)').replace('var(', 'rgba(').replace('--green','0,214,143').replace('--red','255,83,112').replace('--yellow','255,215,64') + ';color:' + col + ';">' + c.action + '</span>' +
           '</div>' +
         '</div>' +
-        '<div style="font-size:0.8rem;color:var(--mid);">' + (c.reason||'') + '</div>' +
-        (pos.liveAsk ? '<div style="font-family:IBM Plex Mono,monospace;font-size:0.68rem;color:var(--dim);margin-top:4px;">buy=' + pos.liveAsk + '\u00a2 sell=' + pos.liveBid + '\u00a2 \u00b7 avg=' + (pos.avgCents||0) + '\u00a2 \u00b7 qty=' + (pos.qty||0) + '</div>' : '') +
+        '<div style="font-size:0.82rem;color:var(--mid);margin-bottom:4px;">' + (c.reason||'') + '</div>' +
+        (pos.liveAsk ? '<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:var(--dim);">live buy=' + pos.liveAsk + '\u00a2  sell=' + pos.liveBid + '\u00a2  avg cost=' + (pos.avgCents||0) + '\u00a2  qty=' + (pos.qty||0) + '</div>' : '') +
       '</div>';
     }).join('');
 
-    summary.textContent = result.summary || '';
+    sumEl.textContent = result.summary || '';
 
-  } catch(err) {
-    grid.innerHTML = '<div style="color:var(--red);padding:10px;">Error: ' + err.message + '</div>';
-    console.error('sellAdvisor error:', err);
+  } catch(e) {
+    grid.innerHTML = '<div style="color:var(--red);padding:10px;">AI error: ' + e.message + '</div>';
   }
 
   btn.disabled = false;
