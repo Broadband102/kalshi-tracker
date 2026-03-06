@@ -816,8 +816,7 @@ async function generatePlays() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1200,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        max_tokens: 800,
         messages: [{ role: 'user', content:
           `Today is ${today}. Kalshi prediction market analyst finding HIGH-EDGE plays.\n\n` +
           `${briefContext}\n\nBANKROLL: $${state.bank}. Tier1=$${(state.bank*0.12).toFixed(0)} Tier2=$${(state.bank*0.10).toFixed(0)} Tier3=$${(state.bank*0.06).toFixed(0)}\n\n` +
