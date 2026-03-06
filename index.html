@@ -811,7 +811,7 @@ async function generatePlays() {
   } catch(e) {}
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1035,7 +1035,7 @@ async function analyzePortfolio() {
   }).join('\n');
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('https://kalshi-proxy.duracraftboat.workers.dev', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
