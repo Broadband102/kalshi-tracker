@@ -529,7 +529,8 @@ select.inp option { background: var(--card); }
 <div class="panel" id="panel-plays">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
     <div style="font-family:'Fredoka One',cursive;font-size:1.2rem;color:var(--yellow);">⚡ Today's Plays</div>
-    <button class="btn btn-green" onclick="generatePlays()" id="btn-plays">⚡ Generate 10 Plays</button>
+    <button class="btn btn-green" onclick="generatePlays()" id="btn-plays">⚡ Generate Plays</button>
+    <button class="btn" onclick="refreshPlayPrices()" id="btn-refresh-plays">🔄 Refresh Prices</button>
   </div>
   <div id="plays-out" style="color:var(--mid);text-align:center;padding:40px;font-weight:700;">Run Morning Routine or click Generate to build your play sheet</div>
 </div>
@@ -1565,6 +1566,178 @@ function renderChecklist() {
   sc.style.color = done === CHK_ITEMS.length ? 'var(--a4)' : done >= 6 ? 'var(--a1)' : 'var(--dim)';
 }
 function toggleChk(i) { chkState[i] = !chkState[i]; renderChecklist(); }
+
+
+async function refreshPlayPrices() {
+  var btn = document.getElementById('btn-refresh-plays');
+  if (btn) { btn.disabled = true; btn.textContent = '\u29d7 Refreshing...'; }
+
+  var plays = S.lastPlays || [];
+  if (!plays.length) {
+    showToast('Generate plays first');
+    if (btn) { btn.disabled = false; btn.textContent = '\ud83d\udd04 Refresh Prices'; }
+    return;
+  }
+  var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  if (!proxy) { showToast('\u26a0\ufe0f Set proxy URL in Setup'); return; }
+
+  var updated = 0;
+  await Promise.all(plays.map(async function(play, i) {
+    if (!play.ticker) return;
+    try {
+      var r = await fetch(proxy + '/kalshi-price?ticker=' + encodeURIComponent(play.ticker));
+      var d = await r.json();
+      if (d.yes_ask != null) {
+        S.lastPlays[i].entryTarget   = d.yes_ask;
+        S.lastPlays[i].liveBid       = d.yes_bid;
+        S.lastPlays[i].edge          = S.lastPlays[i].fairValue - d.yes_ask;
+        S.lastPlays[i].priceRefreshed = new Date().toLocaleTimeString();
+        updated++;
+      }
+    } catch(e) { /* skip */ }
+  }));
+
+  saveState();
+  renderPlayCards(S.lastPlays);
+  if (btn) { btn.disabled = false; btn.textContent = '\ud83d\udd04 Refresh Prices'; }
+  showToast('\u2705 ' + updated + ' play prices updated from Kalshi');
+}
+
+
+async function sellAdvisor() {
+  var btn = document.getElementById('btn-sell');
+  var card = document.getElementById('sell-card');
+  var grid = document.getElementById('sell-grid');
+  var summary = document.getElementById('sell-summary');
+
+  btn.disabled = true;
+  btn.textContent = '\u29d7 Fetching live prices...';
+  card.style.display = 'block';
+  grid.innerHTML = '<div style="color:var(--dim);font-size:0.82rem;padding:10px;">Loading live prices from Kalshi...</div>';
+  summary.innerHTML = '';
+
+  var positions = S.positions || [];
+  if (!positions.length) {
+    grid.innerHTML = '<div style="color:var(--dim);padding:20px;text-align:center;">No positions — import your CSV first</div>';
+    btn.disabled = false; btn.textContent = '\ud83d\udd34 Should I Sell?';
+    return;
+  }
+
+  var proxy = window.KALSHI_PROXY || localStorage.getItem('kft-proxy') || '';
+  if (!proxy) { showToast('\u26a0\ufe0f Set proxy URL in Setup first'); btn.disabled = false; btn.textContent = '\ud83d\udd34 Should I Sell?'; return; }
+
+  // ── Step 1: Fetch live prices for every position ──────────────────────
+  var enriched = [];
+  await Promise.all(positions.map(async function(pos, i) {
+    var data = Object.assign({}, pos);
+    try {
+      var r = await fetch(proxy + '/kalshi-price?ticker=' + encodeURIComponent(pos.ticker));
+      var d = await r.json();
+      if (d.yes_ask != null) {
+        data.liveAsk  = d.yes_ask;   // current buy price
+        data.liveBid  = d.yes_bid;   // current sell price (what you get if you sell YES)
+        data.lastPrice= d.last_price;
+        data.volume24h= d.volume_24h;
+        data.status   = d.status;
+        // Recalc live P&L: selling at yes_bid (what market pays you)
+        if (pos.avgCents && pos.qty) {
+          data.livePnl = ((d.yes_bid - pos.avgCents) / 100) * pos.qty;
+        }
+      }
+    } catch(e) { /* use cached */ }
+    enriched.push(data);
+  }));
+
+  // Update stored prices
+  enriched.forEach(function(p, i) {
+    if (p.liveAsk) {
+      S.positions[i].liveCents = p.liveAsk;
+      if (p.livePnl !== undefined) S.positions[i].pnl = p.livePnl;
+    }
+  });
+  saveState();
+
+  btn.textContent = '\u29d7 AI analyzing positions...';
+  grid.innerHTML = '<div style="color:var(--dim);font-size:0.82rem;padding:10px;">AI analyzing your positions with live prices...</div>';
+
+  // ── Step 2: Build position summary for AI ────────────────────────────
+  var posText = enriched.map(function(p) {
+    var liveLine = p.liveAsk
+      ? 'LIVE: buy=' + p.liveAsk + '\u00a2 sell=' + p.liveBid + '\u00a2 vol24h=' + (p.volume24h||'?')
+      : 'LIVE: unavailable';
+    var pnlLine = p.livePnl !== undefined
+      ? (p.livePnl >= 0 ? '+' : '') + '$' + p.livePnl.toFixed(2)
+      : '$' + (p.pnl||0).toFixed(2);
+    return '- ' + p.ticker + ': ' + (p.market||'') +
+           '\n  Direction=' + p.direction + ' Qty=' + p.qty +
+           ' AvgCost=' + (p.avgCents||0) + '\u00a2 Invested=$' + (p.invested||0).toFixed(2) +
+           '\n  ' + liveLine +
+           '\n  UnrealisedP&L=' + pnlLine;
+  }).join('\n\n');
+
+  // ── Step 3: Call Claude ───────────────────────────────────────────────
+  try {
+    var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    var resp = await fetch(proxy, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        tools: [{type:'web_search_20250305', name:'web_search'}],
+        messages: [{role:'user', content:
+          'Today is ' + today + '. You are a Kalshi prediction market advisor.\n\n' +
+          'MY POSITIONS (with live Kalshi prices):\n' + posText + '\n\n' +
+          'Bankroll: $' + S.bank + '\n\n' +
+          'Search for any relevant breaking news that might affect these markets, then give a HOLD/SELL/WATCH call for each position.\n\n' +
+          'Respond ONLY with a JSON object:\n' +
+          '{"calls":[{"ticker":"KXCPI-26AUG-T0.2","action":"HOLD","confidence":80,"reason":"one sentence"}],' +
+          '"summary":"2-3 sentence overall portfolio assessment"}'
+        }]
+      })
+    });
+
+    var data = await resp.json();
+    var raw = (data.content||[]).map(function(b){ return b.type==='text' ? b.text : ''; }).join('');
+    var clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+    var s = clean.indexOf('{'), e = clean.lastIndexOf('}');
+    if (s < 0 || e < 0) throw new Error('No JSON in response');
+    var result = JSON.parse(clean.slice(s, e+1));
+
+    // ── Render calls grid ──────────────────────────────────────────────
+    var actionColors = {HOLD:'var(--green)', SELL:'var(--red)', WATCH:'var(--yellow)'};
+    grid.innerHTML = (result.calls||[]).map(function(c) {
+      var pos = enriched.find(function(p){ return p.ticker === c.ticker; }) || {};
+      var color = actionColors[c.action] || 'var(--mid)';
+      var pnlVal = pos.livePnl !== undefined ? pos.livePnl : (pos.pnl||0);
+      var pnlStr = (pnlVal >= 0 ? '+' : '') + '$' + pnlVal.toFixed(2);
+      var pnlColor = pnlVal >= 0 ? 'var(--green)' : 'var(--red)';
+      return '<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid ' + color + ';border-radius:8px;padding:14px 16px;margin-bottom:8px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+          '<div>' +
+            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;font-weight:700;color:var(--text);">' + c.ticker + '</span>' +
+            '<span style="font-size:0.75rem;color:var(--mid);margin-left:8px;">' + (pos.market||'') + '</span>' +
+          '</div>' +
+          '<div style="display:flex;gap:10px;align-items:center;">' +
+            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.78rem;color:' + pnlColor + ';">' + pnlStr + '</span>' +
+            '<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:800;color:' + color + ';background:' + color.replace(')', ',0.15)').replace('var','rgba').replace('(--','(') + ';padding:3px 10px;border-radius:4px;">' + c.action + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:0.8rem;color:var(--mid);">' + (c.reason||'') + '</div>' +
+        (pos.liveAsk ? '<div style="font-family:IBM Plex Mono,monospace;font-size:0.68rem;color:var(--dim);margin-top:4px;">buy=' + pos.liveAsk + '\u00a2 sell=' + pos.liveBid + '\u00a2 \u00b7 avg=' + (pos.avgCents||0) + '\u00a2 \u00b7 qty=' + (pos.qty||0) + '</div>' : '') +
+      '</div>';
+    }).join('');
+
+    summary.textContent = result.summary || '';
+
+  } catch(err) {
+    grid.innerHTML = '<div style="color:var(--red);padding:10px;">Error: ' + err.message + '</div>';
+    console.error('sellAdvisor error:', err);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '\ud83d\udd34 Should I Sell?';
+}
 
 async function refreshAllPrices() {
   var btn = document.getElementById('btn-refresh-prices');
