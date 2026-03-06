@@ -804,7 +804,13 @@ async function generatePlays() {
           `Today is ${today}. You are a Kalshi prediction market analyst finding HIGH-EDGE plays.\n\n` +
           `BANKROLL: $${S.bank}. Tier1=$${(S.bank*0.12).toFixed(0)} Tier2=$${(S.bank*0.10).toFixed(0)} Tier3=$${(S.bank*0.06).toFixed(0)}\n\n` +
           `LIVE KALSHI MARKETS:\n${marketList}\n\n` +
-          `Return 5-10 high-edge plays as a JSON array. Only include plays where |fairValue - entryTarget| >= 15. Max 3 plays from the same series. Spread across categories (Politics, Economics, Crypto, Climate).\n\n` +
+          `Return 5-10 high-edge plays as a JSON array. STRICT RULES:
+- Only plays where |fairValue - entryTarget| >= 15 cents edge
+- MAX 2 plays from same series ticker prefix (e.g. only 2 KXFED, only 2 KXTRUMPSAY)
+- MUST include plays from AT LEAST 3 different categories
+- Priority order: Economics, Politics, Crypto, Geopolitics, Climate — spread evenly
+- If Economics dominates the market list, still cap Economics at 4 plays max
+- Prefer longer-horizon markets (months out) over short-term\n\n` +
           `Respond with ONLY a raw JSON array, no markdown fences, no other text:\n` +
           `[{"num":1,"market":"title","ticker":"KXTICKER","category":"Economics","direction":"YES","entryTarget":35,"fairValue":55,"edge":20,"confidence":72,"tier":1,"size":12,"reason":"one sentence","risk":"LOW","expiryEst":"Apr 28"}]`
         }]
@@ -828,6 +834,90 @@ async function generatePlays() {
   btn.textContent = '⚡ Generate Plays';
 }
 
+
+function addPlayToPortfolio(p) {
+  const pos = {
+    num: Date.now(),
+    market: p.market || '',
+    ticker: p.ticker || '',
+    category: p.category || '',
+    direction: p.direction || 'YES',
+    entry: p.entryTarget || 0,
+    size: p.size || 10,
+    fairValue: p.fairValue || 0,
+    edge: p.edge || 0,
+    reason: p.reason || '',
+    added: new Date().toLocaleDateString(),
+    url: 'https://kalshi.com/markets/' + (p.ticker||'')
+  };
+  if (!S.positions) S.positions = [];
+  S.positions.push(pos);
+  saveState();
+  showToast('✅ Added ' + (p.ticker||'play') + ' to portfolio!');
+}
+
+function watchPlay(p) {
+  showToast('👁 Watching ' + (p.ticker||'play'));
+}
+
+
+function importPortfolio(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const text = e.target.result;
+      // Try JSON first
+      if (file.name.endsWith('.json')) {
+        const data = JSON.parse(text);
+        if (data.positions) {
+          S.positions = data.positions;
+        } else if (Array.isArray(data)) {
+          S.positions = data;
+        }
+        if (data.bank) S.bank = data.bank;
+        saveState(); updateHero(); showTab('portfolio');
+        showToast('✅ Imported ' + S.positions.length + ' positions from JSON');
+        return;
+      }
+      // CSV parsing
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
+      const positions = [];
+      for (let i = 1; i < lines.length; i++) {
+        const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''));
+        if (vals.length < 2) continue;
+        const row = {};
+        headers.forEach((h, idx) => { row[h] = vals[idx] || ''; });
+        // Map common CSV column names to our format
+        const pos = {
+          num: Date.now() + i,
+          market: row.market || row.title || row.question || row.name || '',
+          ticker: row.ticker || row.symbol || '',
+          category: row.category || row.type || 'Other',
+          direction: (row.direction || row.side || row.type2 || 'YES').toUpperCase(),
+          entry: parseFloat(row.entry || row.entryprice || row.price || row.cost || 0),
+          size: parseFloat(row.size || row.amount || row.investment || row.cost || 10),
+          fairValue: parseFloat(row.fairvalue || row.fair || 0),
+          edge: parseFloat(row.edge || 0),
+          reason: row.reason || row.notes || '',
+          added: row.date || row.added || new Date().toLocaleDateString(),
+          url: row.url || ('https://kalshi.com/markets/' + (row.ticker||''))
+        };
+        if (pos.market || pos.ticker) positions.push(pos);
+      }
+      if (!positions.length) { showToast('⚠️ No valid rows found in CSV'); return; }
+      S.positions = [...(S.positions||[]), ...positions];
+      saveState(); updateHero(); showTab('portfolio');
+      showToast('✅ Imported ' + positions.length + ' positions from CSV');
+    } catch(err) {
+      showToast('❌ Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
 function renderPlayCards(plays) {
   const container = document.getElementById('plays-out');
   if (!plays || !plays.length) {
@@ -865,8 +955,8 @@ function renderPlayCards(plays) {
       </div>
       <div style="font-size:0.72rem;color:var(--mid);margin-bottom:10px;text-align:center;">${p.reason||''}</div>
       <div style="display:flex;gap:6px;justify-content:center;">
-        <button onclick="addPlay(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;">+ Add to Portfolio</button>
-        <button onclick="watchPlay(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="background:var(--card2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">Watch</button>
+        <a href="https://kalshi.com/markets/${p.ticker||''}" target="_blank" style="background:var(--green);color:#000;border:none;border-radius:6px;padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;text-decoration:none;">🛒 Buy on Kalshi</a>
+        <button onclick="addPlayToPortfolio(${JSON.stringify(p).replace(/'/g,"'")})" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">+ Track</button>
         <button onclick="this.closest('.play-card').style.display='none'" style="background:var(--card2);color:var(--dim);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:0.72rem;cursor:pointer;">Skip</button>
       </div>
     </div>`;
