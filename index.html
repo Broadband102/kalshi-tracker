@@ -1237,52 +1237,85 @@ function addPlayToPortfolio(p) {
 
 
 function importPortfolio(event) {
-  const file = event.target.files[0];
+  var file = event.target.files[0];
   if (!file) return;
-  const reader = new FileReader();
+  var reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const text = e.target.result;
+      var text = e.target.result;
+
+      // ── JSON ──
       if (file.name.endsWith('.json')) {
-        const data = JSON.parse(text);
-        const positions = Array.isArray(data) ? data : (data.positions || []);
-        S.positions = [...(S.positions||[]), ...positions];
+        var data = JSON.parse(text);
+        var positions = Array.isArray(data) ? data : (data.positions || []);
+        S.positions = (S.positions || []).concat(positions);
         saveState(); updateHero(); renderPositions(); showTab('portfolio');
         showToast('\u2705 Imported ' + positions.length + ' positions');
         return;
       }
-      // Kalshi CSV: marketTicker,seriesTitle,eventTitle,marketTitle,closeDate,
-      // volume,yesPrice,noPrice,lastTradePrice,position,averagePrice,exposure,positionReturns
-      const rawLines = text.replace(/\r/g,'').split('\n');
-      const rawHeaders = rawLines[0].replace(/^\uFEFF/,'');
-      const headers = rawHeaders.split(',').map(h => h.trim().replace(/^"|"$/g,'').toLowerCase().replace(/[^a-z]/g,''));
-      const get = (vals, name) => (vals[headers.indexOf(name)]||'').trim().replace(/^"|"$/g,'');
-      const positions = [];
-      for (let i = 1; i < rawLines.length; i++) {
-        const vals = rawLines[i].split(',');
-        if (!vals[0]) continue;
-        const ticker = get(vals,'marketticker');
-        const posStr = get(vals,'position');
-        const posMatch = posStr.match(/(Yes|No)\s*x\s*(\d+)/i);
-        const direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
-        const qty = posMatch ? parseInt(posMatch[2]) : 0;
-        const entry = parseFloat((get(vals,'averageprice')||'0').replace('\u00a2','').replace(/[^0-9.]/g,'')) || 0;
-        const size = parseFloat((get(vals,'exposure')||'0').replace('$','').replace(/[^0-9.]/g,'')) || 0;
-        const pnl = parseFloat((get(vals,'positionreturns')||'0').replace('$','').replace(/[^0-9.\-]/g,'')) || 0;
-        const yesPrice = parseFloat((get(vals,'yesprice')||'0').replace('\u00a2','').replace(/[^0-9.]/g,'')) || 0;
+
+      // ── KALSHI CSV ──
+      // Columns: marketTicker, seriesTitle, eventTitle, marketTitle, closeDate,
+      //          volume, yesPrice, noPrice, lastTradePrice, position, averagePrice,
+      //          exposure, positionReturns, lockedInReturns, totalReturns
+      var rawLines = text.replace(/\r/g, '').split('\n');
+      var headerLine = rawLines[0].replace(/^\uFEFF/, '').replace(/"/g, '');
+      var headers = headerLine.split(',').map(function(h) {
+        return h.trim().toLowerCase().replace(/[^a-z]/g, '');
+      });
+
+      function col(vals, name) {
+        var idx = headers.indexOf(name);
+        return idx >= 0 ? vals[idx].trim().replace(/^"|"$/g, '') : '';
+      }
+      function parseMoney(s) {
+        return parseFloat(s.replace(/[$¢,+]/g, '')) || 0;
+      }
+
+      var positions = [];
+      for (var i = 1; i < rawLines.length; i++) {
+        var vals = rawLines[i].split(',');
+        if (!vals[0] || !vals[0].trim()) continue;
+
+        var ticker    = col(vals, 'marketticker');
+        var series    = col(vals, 'seriestitle');
+        var eventTtl  = col(vals, 'eventtitle');
+        var mktTtl    = col(vals, 'markettitle');
+        var closeDate = col(vals, 'closedate');
+        var posStr    = col(vals, 'position');       // "Yes x 22"
+        var avgPrice  = col(vals, 'averageprice');   // "45¢"
+        var exposure  = col(vals, 'exposure');       // "$9.62" = actual $ invested
+        var yesPrice  = col(vals, 'yesprice');       // "48¢" = last price on site
+        var returns   = col(vals, 'positionreturns');// "+$0.56"
+
+        var posMatch  = posStr.match(/(Yes|No)\s*x\s*(\d+)/i);
+        var direction = posMatch ? posMatch[1].toUpperCase() : 'YES';
+        var qty       = posMatch ? parseInt(posMatch[2]) : 0;
+        var entry     = parseMoney(avgPrice);   // cents
+        var invested  = parseMoney(exposure);   // dollars — Kalshi's real figure
+        var pnl       = parseMoney(returns);    // dollars
+        var lastPrice = parseMoney(yesPrice);   // cents
+
         if (!ticker) continue;
         positions.push({
-          num: Date.now()+i, market: get(vals,'eventtitle')||get(vals,'markettitle')||ticker,
-          ticker, category: get(vals,'seriestitle')||'Other',
-          direction, qty, entry, size, pnl,
-          currentPrice: yesPrice||entry,
-          reason: get(vals,'markettitle')||'',
-          added: get(vals,'closedate')||new Date().toLocaleDateString(),
-          url: 'https://kalshi.com/markets/'+ticker.toLowerCase().split('-')[0]
+          num:          Date.now() + i,
+          market:       eventTtl || mktTtl || ticker,
+          ticker:       ticker,
+          category:     series || 'Other',
+          direction:    direction,
+          qty:          qty,
+          entry:        entry,        // avg cost in cents
+          invested:     invested,     // actual $ spent (from Kalshi exposure field)
+          pnl:          pnl,          // $ P&L
+          currentPrice: lastPrice || entry,  // last traded price in cents
+          reason:       mktTtl || '',
+          added:        closeDate || new Date().toLocaleDateString(),
+          url:          'https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]
         });
       }
-      if (!positions.length) { showToast('\u26a0\ufe0f No valid rows found'); return; }
-      S.positions = [...(S.positions||[]), ...positions];
+
+      if (!positions.length) { showToast('\u26a0\ufe0f No rows found'); return; }
+      S.positions = (S.positions || []).concat(positions);
       saveState(); updateHero(); renderPositions(); showTab('portfolio');
       showToast('\u2705 Imported ' + positions.length + ' Kalshi positions');
     } catch(err) {
@@ -1301,11 +1334,8 @@ function renderPositions() {
   // Update stats
   let totalInvested = 0, totalPnl = 0;
   positions.forEach(p => {
-    // exposure is the actual $ invested per Kalshi's CSV
-    const invested = parseFloat(String(p.exposure||p.size||'0').replace('$','').replace(',','')) || 0;
-    const pnl = parseFloat(String(p.pnl||p.positionReturns||'0').replace('$','').replace(/[^0-9.\-]/g,'')) || 0;
-    totalInvested += invested;
-    totalPnl += pnl;
+    totalInvested += parseFloat(p.invested || p.exposure || p.size || 0) || 0;
+    totalPnl      += parseFloat(p.pnl || 0) || 0;
   });
   const el = id => document.getElementById(id);
   if (el('pt-invested')) el('pt-invested').textContent = '$' + totalInvested.toFixed(0);
@@ -1333,7 +1363,7 @@ function renderPositions() {
     return `<div class="pos-row" style="border-left:3px solid ${pnl>=0?'var(--green)':'var(--red)'}">
       <div>
         <div class="pos-market">${market}</div>
-        <div class="pos-meta">${ticker} · ${category.toUpperCase()} · ${direction}${qty?' x'+qty:''} · avg ${entry}¢${p.currentPrice?' → now '+p.currentPrice+'¢':''} · $${parseFloat(String(p.exposure||size||'0').replace('$','').replace(',','')||0).toFixed(2)}</div>
+        <div class="pos-meta">${ticker} · ${category.toUpperCase()} · ${direction}${qty?' x'+qty:''} · avg ${entry}¢ → ${p.currentPrice||entry}¢ now · $${(parseFloat(p.invested||p.exposure||p.size||0)||0).toFixed(2)} in</div>
       </div>
       <div>
         <div class="pos-pnl" style="color:${pnlColor}">${pnlStr}</div>
@@ -1480,7 +1510,7 @@ async function refreshAllPrices() {
       const r = await fetch('https://kalshi-proxy.duracraftboat.workers.dev/kalshi-price?ticker=' + encodeURIComponent(ticker));
       const d = await r.json();
       if (d.yes_ask != null) {
-        S.positions[i].currentPrice = d.yes_ask;
+        S.positions[i].currentPrice = d.yes_ask;  // yes_ask = live buy price
         S.positions[i].lastRefreshed = new Date().toLocaleTimeString();
         updated++;
       }
@@ -1492,3 +1522,5 @@ async function refreshAllPrices() {
   showToast('✅ Updated ' + updated + ' prices');
 }
 </script>
+</body>
+</html>
