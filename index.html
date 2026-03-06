@@ -1063,7 +1063,7 @@ async function generatePlays() {
     plays = plays.map(function(play) {
       var mkt = lookup[play.ticker];
       if (mkt) {
-        var eventTk   = mkt.event_ticker || play.ticker.split('-').slice(0,2).join('-');
+        var eventTk   = mkt.event_ticker || play.ticker.split('-').slice(0,-1).join('-');
         var series    = eventTk.split('-')[0].toLowerCase();
         var eventSlug = eventTk.toLowerCase();
         play.url      = 'https://kalshi.com/markets/' + series + '/' + eventSlug;
@@ -1343,12 +1343,14 @@ function renderPlayCards(plays) {
     const rc      = p.risk === 'LOW' ? '#3fb950' : p.risk === 'HIGH' ? '#f85149' : '#d29922';
     const expRet  = p.edge && p.entryTarget ? ((p.edge / p.entryTarget)*100).toFixed(1)+'%' : '';
     const series    = (p.ticker||'').split('-')[0].toLowerCase();
-    // Kalshi URL: /markets/{series}/{event_ticker}/{market_ticker}
-    // Kalshi auto-redirects event_ticker slug to the pretty name — no lookup needed
-    // event_ticker = all ticker segments except the last (e.g. KXFED-26JUN-T3.50 → KXFED-26JUN)
+    // Kalshi URL: /markets/{series}/{event}/{ticker}  — 3 segments required
+    // p.url from AI already = "https://kalshi.com/markets/kxfed/kxfed-26jun" (series/event)
+    // Just append the full market ticker to get the exact contract page
     const tickerLow  = (p.ticker||'').toLowerCase();
-    const eventLow   = (p.event_ticker||tickerLow.split('-').slice(0,-1).join('-')).toLowerCase();
-    const deepUrl    = 'https://kalshi.com/markets/' + series + '/' + eventLow + '/' + tickerLow;
+    const base2      = (p.url||'').replace(/\/+$/, ''); // strip trailing slash
+    const deepUrl    = base2 && base2.split('/').length >= 5
+      ? base2 + '/' + tickerLow                          // p.url already has series/event
+      : 'https://kalshi.com/markets/' + series + '/' + tickerLow.split('-').slice(0,-1).join('-') + '/' + tickerLow;
     const seriesUrl = deepUrl;
 
     // ── Kelly Criterion ───────────────────────────────────────────────
@@ -2279,8 +2281,7 @@ function addPosition() {
 function exportCSV() {
   var positions = S.positions || [];
   if (!positions.length) { showToast('No positions to export'); return; }
-  var hdr = 'ticker,market,category,direction,qty,avgCents,liveCents,invested,pnl,added
-';
+  var hdr = 'ticker,market,category,direction,qty,avgCents,liveCents,invested,pnl,added\n';
   var rows = positions.map(function(p) {
     return [p.ticker,'"'+(p.market||'').replace(/"/g,"''")+'"',p.category||'',
             p.direction||'YES',p.qty||0,p.avgCents||0,p.liveCents||0,
