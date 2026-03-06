@@ -484,6 +484,7 @@ select.inp option { background: var(--card); }
   <div class="logo">🎰 Kalshi Edge</div>
   <div class="hero-nums">
     <div class="hero-num"><div class="val" id="h-bank" style="color:var(--green)">$100</div><div class="lbl">Bankroll</div></div>
+    <div class="hero-num"><div class="val" id="h-cash" style="color:var(--blue)">$0</div><div class="lbl">Cash</div></div>
     <div class="hero-num"><div class="val" id="h-goal" style="color:var(--yellow)">$587K</div><div class="lbl">Goal</div></div>
     <div class="hero-num"><div class="val" id="h-day" style="color:var(--blue)">Day 1</div><div class="lbl">Day</div></div>
     <div class="hero-num"><div class="val" id="h-pct" style="color:var(--purple)">0%</div><div class="lbl">Progress</div></div>
@@ -799,6 +800,8 @@ function updateHero() {
   // Update days-left if element exists
   var dlEl = document.getElementById('h-daysleft');
   if (dlEl) dlEl.textContent = daysLeft + 'd left';
+  var cashDisp = document.getElementById('h-cash');
+  if (cashDisp) cashDisp.textContent = '$' + (S.cash||0).toFixed(2);
   // NOTE: do NOT call renderPositions() here — causes infinite loop
 }
 
@@ -1654,9 +1657,15 @@ function renderPlayCards(plays) {
       var pctHalf    = (fHalf    * 100).toFixed(1);
       var pctQuarter = (fQuarter * 100).toFixed(1);
 
+      var freeCash = S.cash || 0;
+      var hasCash  = freeCash > 0;
+
       kellyHtml =
         '<div style="margin:10px 0 6px;border-top:1px solid var(--border);padding-top:8px;">' +
-          '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);letter-spacing:0.06em;margin-bottom:6px;">KELLY SIZING</div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+            '<div style="font-size:0.68rem;font-weight:800;color:var(--mid);letter-spacing:0.06em;">KELLY SIZING</div>' +
+            '<div style="font-size:0.65rem;color:var(--dim);">vs $' + bank.toFixed(2) + ' bankroll' + (hasCash ? ' \u00b7 $' + freeCash.toFixed(2) + ' free cash' : '') + '</div>' +
+          '</div>' +
           '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
 
             // Full Kelly
@@ -1683,6 +1692,14 @@ function renderPlayCards(plays) {
               '<div style="font-size:0.62rem;color:var(--dim);margin-top:2px;">Conservative</div>' +
             '</div>' +
 
+          (hasCash ?
+            '<div style="flex:1;min-width:80px;background:#388bfd20;border:1px solid #388bfd40;border-radius:6px;padding:6px 8px;text-align:center;">' +
+              '<div style="font-size:0.62rem;color:#388bfd;font-weight:700;letter-spacing:0.05em;">CASH KELLY</div>' +
+              '<div style="font-family:IBM Plex Mono,monospace;font-size:0.95rem;font-weight:800;color:#388bfd;">$' + (fFull * freeCash).toFixed(2) + '</div>' +
+              '<div style="font-size:0.65rem;color:var(--dim);">' + (fFull*100).toFixed(1) + '% of cash</div>' +
+              '<div style="font-size:0.62rem;color:var(--dim);margin-top:2px;">Deployable now</div>' +
+            '</div>'
+            : '') +
           '</div>' +
         '</div>';
     }
