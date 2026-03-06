@@ -1299,7 +1299,7 @@ function renderPositions() {
                    ? ' \u2192 ' + liveStr + ' live'
                    : '';
     var accentColor = p.pnl >= 0 ? 'var(--green)' : 'var(--red)';
-    return '<div class="pos-row" data-ticker="' + (pos.ticker||'') + '" style="border-left:3px solid ' + accentColor + '">' +
+    return '<div class="pos-row" data-ticker="' + (p.ticker||'') + '" style="border-left:3px solid ' + accentColor + '">' +
       '<div>' +
         '<div class="pos-market">' + (p.market || p.ticker) + '</div>' +
         '<div class="pos-meta">' + p.ticker +
