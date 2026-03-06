@@ -2177,21 +2177,50 @@ function fetchSports(){
 }
 function renderSportsMarkets(markets){
   var el=document.getElementById('sports-markets-list');
-  if(!markets.length){el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);">No games closing within 30 minutes right now.</div>';return;}
-  el.innerHTML=markets.map(function(m){
-    var mins=m.minutes_to_close||0,cdClass=mins<=70?'countdown-urgent':mins<=100?'countdown-soon':'countdown-ok',cdLabel=mins+'m';
-    var series=(m.ticker||'').split('-')[0].toLowerCase(),tickerLow=m.ticker.toLowerCase(),eventLow=tickerLow.split('-').slice(0,-1).join('-'),deepUrl='https://kalshi.com/markets/'+series+'/'+eventLow+'/'+tickerLow;
-    return '<div class="sport-market-row">'
-      +'<div style="flex:1;min-width:180px;"><div style="font-weight:700;font-size:0.84rem;color:var(--text);">'+(m.title||m.ticker)+'</div>'
-      +'<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:var(--blue);margin-top:2px;">'+m.ticker+'</div>'
-      +(m.subtitle?'<div style="font-size:0.73rem;color:var(--mid);margin-top:2px;">'+m.subtitle+'</div>':'')
-      +'</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-      +'<span class="countdown-badge '+cdClass+'">'+cdLabel+'</span>'
-      +'<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:700;color:var(--green);">YES '+(m.yes_ask||0)+'c</span>'
-      +'<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:700;color:var(--red);">NO '+(m.no_ask||0)+'c</span>'
-      +'<a href="'+deepUrl+'" target="_blank" class="pbtn pbtn-buy" style="padding:5px 10px;font-size:0.73rem;">Trade</a>'
-      +'</div></div>';
-  }).join('');
+  if(!markets.length){
+    el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);">No live games found right now. Check back during game time.</div>';
+    return;
+  }
+  // Separate close games from blowouts
+  var close  = markets.filter(function(m){return m.is_close_game||m.is_maybe_close;});
+  var others = markets.filter(function(m){return !m.is_close_game&&!m.is_maybe_close;});
+  var html='';
+  if(close.length){
+    html+='<div style="font-size:0.72rem;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px 0;">🔥 Close Games (High Volatility)</div>';
+    html+=close.map(function(m){return renderSportMarketCard(m,true);}).join('');
+  }
+  if(others.length){
+    html+='<div style="font-size:0.72rem;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 8px 0;">Other Markets</div>';
+    html+=others.map(function(m){return renderSportMarketCard(m,false);}).join('');
+  }
+  el.innerHTML=html;
+}
+function renderSportMarketCard(m,isHot){
+  var mins=m.minutes_to_close||0;
+  var cdClass=mins<=30?'countdown-urgent':mins<=60?'countdown-soon':'countdown-ok';
+  var series=(m.ticker||'').split('-')[0].toLowerCase(),tickerLow=m.ticker.toLowerCase(),eventLow=((m.event_ticker||'')||tickerLow.split('-').slice(0,-1).join('-')).toLowerCase(),deepUrl='https://kalshi.com/markets/'+series+'/'+eventLow+'/'+tickerLow;
+  var mid=m.mid_price||m.last_price||50;
+  var dist=Math.abs(mid-50);
+  // Contest bar: green=contested, yellow=leaning, red=decided
+  var contestColor=dist<=10?'#16a34a':dist<=20?'#ca8a04':dist<=30?'#ea580c':'#dc2626';
+  var contestLabel=dist<=10?'🟢 CLOSE':dist<=20?'🟡 LEANING':dist<=30?'🟠 PULLING AWAY':'🔴 DECIDED';
+  var borderColor=isHot?'var(--green)':'var(--dim)';
+  return '<div class="sport-market-row" style="border-left:3px solid '+borderColor+';">'
+    +'<div style="flex:1;min-width:180px;">'
+    +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+    +'<span style="font-weight:700;font-size:0.84rem;color:var(--text);">'+(m.title||m.ticker)+'</span>'
+    +'<span style="font-size:0.7rem;font-weight:700;color:'+contestColor+';">'+contestLabel+'</span>'
+    +'</div>'
+    +'<div style="font-family:IBM Plex Mono,monospace;font-size:0.7rem;color:var(--blue);margin-top:2px;">'+m.ticker+'</div>'
+    +(m.subtitle?'<div style="font-size:0.73rem;color:var(--mid);margin-top:2px;">'+m.subtitle+'</div>':'')
+    +'</div>'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    +'<span class="countdown-badge '+cdClass+'">'+mins+'m</span>'
+    +'<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:700;color:var(--green);">YES '+(m.yes_ask||0)+'¢</span>'
+    +'<span style="font-family:IBM Plex Mono,monospace;font-size:0.82rem;font-weight:700;color:var(--red);">NO '+(m.no_ask||0)+'¢</span>'
+    +'<span style="font-family:IBM Plex Mono,monospace;font-size:0.75rem;color:var(--dim);">mid '+mid+'¢</span>'
+    +'<a href="'+deepUrl+'" target="_blank" class="pbtn pbtn-buy" style="padding:5px 10px;font-size:0.73rem;">Trade ↗</a>'
+    +'</div></div>';
 }
 function renderSportsPositions(){
   var positions=(S.positions||[]).filter(function(p){return isSportTicker(p.ticker||'');});
