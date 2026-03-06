@@ -784,8 +784,8 @@ async function generatePlays() {
   container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:12px;"><div class="spinner"></div> AI building stratified 10-play sheet...</div>';
 
   const today = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-  const briefContext = state.lastBrief ? `DAILY BRIEF CONTEXT:\n${state.lastBrief.slice(0, 800)}` : 'No brief generated yet.';
-  const bankPerPlay = (state.bank / 10).toFixed(2);
+  const briefContext = S.lastBrief ? `DAILY BRIEF CONTEXT:\n${S.lastBrief.slice(0, 800)}` : 'No brief generated yet.';
+  const bankPerPlay = (S.bank / 10).toFixed(2);
 
   // Fetch live markets from Worker
   let marketList = 'Could not load markets.';
@@ -819,7 +819,7 @@ async function generatePlays() {
         max_tokens: 800,
         messages: [{ role: 'user', content:
           `Today is ${today}. Kalshi prediction market analyst finding HIGH-EDGE plays.\n\n` +
-          `${briefContext}\n\nBANKROLL: $${state.bank}. Tier1=$${(state.bank*0.12).toFixed(0)} Tier2=$${(state.bank*0.10).toFixed(0)} Tier3=$${(state.bank*0.06).toFixed(0)}\n\n` +
+          `${briefContext}\n\nBANKROLL: $${S.bank}. Tier1=$${(S.bank*0.12).toFixed(0)} Tier2=$${(S.bank*0.10).toFixed(0)} Tier3=$${(S.bank*0.06).toFixed(0)}\n\n` +
           `LIVE KALSHI MARKETS:\n${marketList}\n\n` +
           `Search today's news. Estimate TRUE probability independently for each market (do NOT anchor to the YES price).\n` +
           `Return up to 10 plays as raw JSON — ONLY include plays where |fairValue - YES price| >= 15:\n` +
@@ -837,7 +837,7 @@ async function generatePlays() {
       const start = clean.indexOf('[');
       const end = clean.lastIndexOf(']') + 1;
       const plays = JSON.parse(clean.slice(start, end));
-      state.lastPlays = plays;
+      S.lastPlays = plays;
       save();
       renderPlayCards(plays);
     } catch(pe) {
