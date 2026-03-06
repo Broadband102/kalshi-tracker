@@ -5,117 +5,458 @@
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🎰 Kalshi Edge Tracker</title>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0f1117;--card:#1a1d27;--card2:#1e2130;--border:#2a2d3e;--text:#e8eaf6;--mid:#7986a3;--dim:#4a5568;--green:#4ade80;--blue:#60a5fa;--purple:#a78bfa;--yellow:#fbbf24;--orange:#fb923c;--red:#f87171;--teal:#2dd4bf;--pink:#f472b6;}
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;min-height:100vh;}
-.header{background:linear-gradient(135deg,#1a1d27,#1e2130);border-bottom:3px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
-.logo{font-family:'Fredoka One',cursive;font-size:1.6rem;color:var(--yellow);}
-.hero-nums{display:flex;gap:16px;flex-wrap:wrap;}
-.hero-num{text-align:center;}
-.hero-num .val{font-family:'Fredoka One',cursive;font-size:1.3rem;}
-.hero-num .lbl{font-size:0.6rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;}
-.tabs{display:flex;gap:6px;padding:12px 16px;background:var(--card);border-bottom:2px solid var(--border);flex-wrap:wrap;}
-.tab{background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:20px;padding:6px 14px;font-size:0.78rem;font-weight:800;cursor:pointer;color:var(--mid);transition:all 0.15s;}
-.tab:hover{border-color:var(--blue);color:var(--blue);}
-.tab.on{background:rgba(96,165,250,0.2);border-color:var(--blue);color:var(--blue);}
-.panel{display:none;padding:16px;max-width:900px;margin:0 auto;}
-.panel.on{display:block;}
-.card{background:var(--card2);border:2px solid var(--border);border-radius:16px;padding:16px;margin-bottom:14px;}
-.card-title{font-family:'Fredoka One',cursive;font-size:1.1rem;color:var(--yellow);margin-bottom:12px;}
-.btn{border:none;border-radius:12px;padding:10px 20px;font-size:0.85rem;font-weight:800;cursor:pointer;transition:all 0.15s;font-family:'Nunito',sans-serif;}
-.btn:disabled{opacity:0.5;cursor:not-allowed;}
-.btn-green{background:linear-gradient(135deg,#166534,#15803d);color:#fff;border:2px solid var(--green);}
-.btn-blue{background:linear-gradient(135deg,#1e3a5f,#1d4ed8);color:#fff;border:2px solid var(--blue);}
-.btn-yellow{background:linear-gradient(135deg,#78350f,#b45309);color:#fff;border:2px solid var(--yellow);}
-.btn-purple{background:linear-gradient(135deg,#4c1d95,#6d28d9);color:#fff;border:2px solid var(--purple);}
-.btn-red{background:linear-gradient(135deg,#7f1d1d,#b91c1c);color:#fff;border:2px solid var(--red);}
-.ai-box{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:14px;font-size:0.85rem;line-height:1.7;white-space:pre-wrap;min-height:60px;}
-.ai-box.loading{display:flex;align-items:center;gap:12px;color:var(--mid);}
-.spinner{width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;}
-@keyframes spin{to{transform:rotate(360deg)}}
-.input-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
-.inp{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:8px 12px;color:var(--text);font-size:0.85rem;font-weight:700;font-family:'Nunito',sans-serif;}
-.inp:focus{outline:none;border-color:var(--blue);}
-.inp-lg{width:100%;}
-.plays-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
-.play-card{background:var(--card2);border:2px solid var(--border);border-radius:16px;padding:14px;position:relative;transition:border-color 0.2s;}
-.play-card.tier1{border-color:rgba(74,222,128,0.3);}
-.play-card.tier2{border-color:rgba(96,165,250,0.3);}
-.play-card.tier3{border-color:rgba(251,146,60,0.3);}
-.play-num{position:absolute;top:10px;right:12px;font-family:'Fredoka One',cursive;font-size:1.8rem;color:rgba(255,255,255,0.07);}
-.play-badge{font-size:0.65rem;font-weight:800;padding:2px 8px;border-radius:20px;display:inline-block;margin-bottom:6px;}
-.pb-t1{background:rgba(74,222,128,0.15);color:var(--green);border:1px solid var(--green);}
-.pb-t2{background:rgba(96,165,250,0.15);color:var(--blue);border:1px solid var(--blue);}
-.pb-t3{background:rgba(251,146,60,0.15);color:var(--orange);border:1px solid var(--orange);}
-.play-title{font-weight:800;font-size:0.88rem;margin-bottom:3px;line-height:1.3;}
-.play-cat{font-size:0.7rem;color:var(--mid);font-weight:700;margin-bottom:8px;}
-.play-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;}
-.pill{font-size:0.68rem;font-weight:800;padding:3px 8px;border-radius:20px;border:2px solid var(--border);}
-.pill-yes{background:rgba(74,222,128,0.15);color:var(--green);border-color:var(--green);}
-.pill-no{background:rgba(248,113,113,0.15);color:var(--red);border-color:var(--red);}
-.pill-size{background:rgba(251,191,36,0.15);color:var(--yellow);border-color:var(--yellow);}
-.conf-bar{height:4px;background:var(--border);border-radius:2px;margin-bottom:8px;}
-.conf-fill{height:100%;border-radius:2px;transition:width 0.5s;}
-.play-reason{font-size:0.75rem;color:var(--mid);font-weight:700;margin-bottom:10px;line-height:1.4;}
-.play-btns{display:flex;gap:6px;}
-.pbtn{flex:1;border:none;border-radius:8px;padding:7px;font-size:0.72rem;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif;}
-.pbtn-add{background:rgba(74,222,128,0.2);color:var(--green);border:2px solid var(--green);}
-.pbtn-skip{background:rgba(255,255,255,0.05);color:var(--dim);border:2px solid var(--border);}
-.pos-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:center;background:rgba(255,255,255,0.03);border-radius:10px;padding:10px 12px;margin-bottom:6px;border:2px solid var(--border);}
-.pos-row.pos-up{border-color:rgba(74,222,128,0.2);}
-.pos-row.pos-down{border-color:rgba(248,113,113,0.2);}
-.pos-name{font-weight:800;font-size:0.85rem;}
-.pos-meta{font-size:0.7rem;color:var(--mid);font-weight:700;margin-top:2px;}
-.pos-pnl{font-family:'Fredoka One',cursive;font-size:1rem;}
-.pos-curr-input{background:var(--card);border:2px solid var(--border);border-radius:8px;padding:5px 8px;color:var(--text);font-weight:800;font-size:0.85rem;width:70px;font-family:'Nunito',sans-serif;}
-.pos-close-btn{background:rgba(248,113,113,0.15);border:2px solid var(--red);color:var(--red);border-radius:8px;padding:4px 8px;cursor:pointer;font-weight:800;font-size:0.8rem;}
-.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;}
-.stat-box{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:10px;text-align:center;}
-.stat-box .sv{font-family:'Fredoka One',cursive;font-size:1.2rem;}
-.stat-box .sl{font-size:0.62rem;font-weight:800;color:var(--mid);text-transform:uppercase;letter-spacing:0.5px;}
-.step-row{display:flex;flex-direction:column;gap:6px;padding:10px;background:rgba(255,255,255,0.03);border-radius:10px;margin-bottom:10px;}
-.step-item{font-size:0.82rem;font-weight:800;color:var(--dim);padding:4px 0;}
-.proj-svg-wrap{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;}
-.toast{position:fixed;bottom:24px;right:24px;background:var(--card2);border:2px solid var(--green);border-radius:12px;padding:10px 18px;font-weight:800;font-size:0.85rem;z-index:9999;animation:fadeIn 0.2s ease;pointer-events:none;}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-.morning-banner{background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,146,60,0.08));border:2px solid rgba(251,191,36,0.3);border-radius:14px;padding:14px;margin-bottom:14px;}
-.api-err{background:rgba(248,113,113,0.1);border:2px solid var(--red);border-radius:12px;padding:12px;font-size:0.82rem;line-height:1.6;color:var(--text);}
-.proxy-inp-wrap{display:flex;gap:8px;align-items:stretch;margin:10px 0;}
-.proxy-inp-wrap .inp{flex:1;}
-select.inp option{background:var(--card);}
-@media(max-width:600px){.stat-grid{grid-template-columns:repeat(2,1fr)}.pos-row{grid-template-columns:1fr auto auto}}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
-.plays-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;padding:4px 0;}
-.play-card{background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);border:1px solid #21262d;border-radius:8px;padding:16px;position:relative;overflow:hidden;transition:border-color 0.2s,transform 0.15s;}
-.play-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent-line,#238636);}
-.play-card:hover{border-color:#388bfd;transform:translateY(-1px);}
-.play-card.held{border-color:#f0883e;}
-.play-num{position:absolute;top:12px;right:14px;font-size:0.65rem;color:#484f58;font-family:'DM Mono',monospace;font-weight:600;letter-spacing:1px;}
-.play-market{font-size:0.82rem;font-weight:600;color:#e6edf3;line-height:1.35;margin-bottom:3px;padding-right:30px;}
-.play-cat{font-size:0.62rem;color:#484f58;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;}
-.play-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
-.play-pill{font-size:0.65rem;font-family:'DM Mono',monospace;padding:3px 8px;border-radius:4px;font-weight:600;letter-spacing:0.3px;}
-.pp-yes{background:rgba(35,134,54,0.2);color:#3fb950;border:1px solid rgba(35,134,54,0.4);}
-.pp-no{background:rgba(218,54,51,0.2);color:#f85149;border:1px solid rgba(218,54,51,0.4);}
-.pp-price{background:rgba(56,139,253,0.1);color:#79c0ff;border:1px solid rgba(56,139,253,0.2);}
-.pp-edge{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3);}
-.pp-size{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3);}
-.play-bar{height:2px;background:#21262d;border-radius:1px;margin-bottom:6px;overflow:hidden;}
-.play-fill{height:100%;border-radius:1px;transition:width 0.8s cubic-bezier(0.4,0,0.2,1);}
-.play-meta{display:flex;justify-content:space-between;font-size:0.62rem;color:#484f58;font-family:'DM Mono',monospace;margin-bottom:8px;}
-.play-meta strong{color:#8b949e;}
-.play-reason{font-size:0.72rem;color:#8b949e;margin-bottom:12px;line-height:1.4;font-style:italic;}
-.play-actions{display:flex;gap:6px;}
-.pbtn{font-size:0.7rem;padding:6px 12px;border-radius:5px;border:none;cursor:pointer;font-weight:600;font-family:'DM Mono',monospace;transition:all 0.15s;letter-spacing:0.3px;}
-.pbtn-buy{background:#238636;color:#fff;}
-.pbtn-buy:hover{background:#2ea043;}
-.pbtn-track{background:transparent;color:#388bfd;border:1px solid #388bfd;}
-.pbtn-track:hover{background:rgba(56,139,253,0.15);}
-.pbtn-skip{background:transparent;color:#484f58;border:1px solid #21262d;}
-.pbtn-skip:hover{color:#8b949e;border-color:#484f58;}
+:root {
+  --bg:      #060911;
+  --surface: #0e1520;
+  --card:    #131c2e;
+  --card2:   #1a2540;
+  --border:  #2a3a5c;
+  --border2: #3a4f7a;
+  --text:    #f0f4ff;
+  --mid:     #8ba0c8;
+  --dim:     #4a6080;
+  --green:   #00d68f;
+  --blue:    #4da6ff;
+  --purple:  #b388ff;
+  --yellow:  #ffd740;
+  --orange:  #ff9d4d;
+  --red:     #ff5370;
+  --teal:    #00e5cc;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 15px;
+  min-height: 100vh;
+}
+
+/* ── HEADER ── */
+.header {
+  background: linear-gradient(90deg, #060911 0%, #0a1428 50%, #060911 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.logo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--yellow);
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-stats {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+.hero-stat { text-align: right; }
+.hero-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.hero-lbl {
+  font-size: 0.65rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ── TABS ── */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 24px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--mid);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  transition: all 0.15s;
+  letter-spacing: 0.3px;
+}
+.tab:hover { color: var(--text); background: var(--surface); }
+.tab.active {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+/* ── PANELS ── */
+.panel { display: none; padding: 20px 24px; }
+.panel.active { display: block; }
+
+/* ── CARDS ── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+}
+.card-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── STAT GRID ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stat-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.sv {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.sl {
+  font-size: 0.68rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ── BUTTONS ── */
+.btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  background: var(--card2);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'IBM Plex Sans', sans-serif;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--card2); border-color: var(--blue); color: var(--blue); }
+.btn-green { background: var(--green); color: #000; border-color: var(--green); }
+.btn-green:hover { background: #00f0a0; border-color: #00f0a0; color: #000; }
+.btn-blue { background: var(--blue); color: #000; border-color: var(--blue); }
+.btn-blue:hover { opacity: 0.85; color: #000; }
+
+/* ── INPUTS ── */
+.inp {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: 'IBM Plex Sans', sans-serif;
+  width: 100%;
+}
+.inp:focus { outline: none; border-color: var(--blue); }
+.inp::placeholder { color: var(--dim); }
+select.inp option { background: var(--card); }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 12px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  z-index: 9999;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  animation: slideIn 0.2s ease;
+}
+@keyframes slideIn { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+
+/* ── SPINNER ── */
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── AI BOX ── */
+.ai-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.api-err {
+  background: rgba(255,83,112,0.1);
+  border: 1px solid rgba(255,83,112,0.3);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+/* ── PLAY CARDS ── */
+.plays-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 14px;
+  padding: 4px 0;
+}
+.play-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent-line, var(--green));
+  border-radius: 10px;
+  padding: 18px 20px;
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.15s;
+}
+.play-card:hover {
+  border-color: var(--accent-line, var(--green));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+}
+.play-num {
+  float: right;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--dim);
+  margin-top: 2px;
+}
+.play-market {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 4px;
+  padding-right: 28px;
+}
+.play-cat {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--mid);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 12px;
+}
+.play-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.play-pill {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 5px;
+  letter-spacing: 0.3px;
+}
+.pp-yes  { background: rgba(0,214,143,0.15); color: #00d68f; border: 1px solid rgba(0,214,143,0.35); }
+.pp-no   { background: rgba(255,83,112,0.15); color: #ff5370; border: 1px solid rgba(255,83,112,0.35); }
+.pp-price { background: rgba(77,166,255,0.12); color: #6db8ff; border: 1px solid rgba(77,166,255,0.25); }
+.pp-edge  { background: rgba(0,214,143,0.12); color: #00d68f; border: 1px solid rgba(0,214,143,0.3); }
+.pp-size  { background: rgba(255,215,64,0.12); color: var(--yellow); border: 1px solid rgba(255,215,64,0.3); }
+.play-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.play-fill { height: 100%; border-radius: 2px; transition: width 0.8s; }
+.play-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--mid);
+  margin-bottom: 10px;
+}
+.play-meta strong { font-size: 0.78rem; }
+.play-reason {
+  font-size: 0.82rem;
+  color: var(--mid);
+  line-height: 1.5;
+  margin-bottom: 14px;
+  font-style: italic;
+}
+.play-actions { display: flex; gap: 8px; align-items: center; }
+.pbtn {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-block;
+}
+.pbtn-buy   { background: var(--green); color: #000; }
+.pbtn-buy:hover { background: #00f0a0; }
+.pbtn-track { background: transparent; color: var(--blue); border: 1px solid var(--blue); }
+.pbtn-track:hover { background: rgba(77,166,255,0.15); }
+.pbtn-skip  { background: transparent; color: var(--dim); border: 1px solid var(--border); font-size: 0.72rem; padding: 7px 10px; }
+.pbtn-skip:hover { color: var(--mid); border-color: var(--border2); }
+
+/* ── PORTFOLIO POSITIONS ── */
+.pos-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  transition: border-color 0.15s;
+}
+.pos-row:hover { border-color: var(--border2); }
+.pos-market { font-size: 0.9rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.pos-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--mid);
+  letter-spacing: 0.3px;
+}
+.pos-pnl {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: right;
+}
+.pos-pnl-lbl { font-size: 0.65rem; color: var(--dim); text-align: right; margin-top: 2px; }
+
+/* ── MORNING CHECKLIST ── */
+.chk-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--mid);
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  margin-bottom: 4px;
+}
+.chk-item:hover { background: var(--surface); border-color: var(--border); color: var(--text); }
+.chk-item.done { color: var(--dim); text-decoration: line-through; }
+.chk-item.done .chk-box { background: var(--green); border-color: var(--green); color: #000; }
+.chk-box {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border2);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 700;
+  flex-shrink: 0;
+  color: transparent;
+}
+
+/* ── PROJECTOR ── */
+#proj-canvas { border-radius: 8px; background: var(--surface); }
+
+/* ── MORNING STEPS ── */
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+  font-size: 0.88rem;
+  color: var(--mid);
+  background: var(--surface);
+}
+.step-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border2);
+  flex-shrink: 0;
+}
+.step-item.done .step-dot { background: var(--green); border-color: var(--green); }
+.step-item.active .step-dot { background: var(--yellow); border-color: var(--yellow); animation: pulse 1s infinite; }
+.step-item.done { color: var(--dim); }
+.step-item.active { color: var(--text); border-color: var(--yellow); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── SETUP ── */
+.setup-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.setup-lbl { font-size: 0.8rem; color: var(--mid); min-width: 120px; }
+.api-badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* ── STOP LOSS ── */
+.stop-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,83,112,0.3);
+  background: rgba(255,83,112,0.1);
+  color: var(--red);
+}
+
+/* ── RESPONSIVE ── */
+@media(max-width:640px) {
+  .hero-stats { gap: 12px; }
+  .hero-val { font-size: 0.9rem; }
+  .plays-grid { grid-template-columns: 1fr; }
+  .panel { padding: 14px 14px; }
+  .tabs { padding: 8px 14px 0; }
+}
 </style>
 </head>
 <body>
@@ -311,12 +652,6 @@ var S = {
 function saveState() {
   try { localStorage.setItem('kft-s', JSON.stringify(S)); } catch(e) {}
 }
-function loadState() {
-  try {
-    var d = JSON.parse(localStorage.getItem('kft-s') || '{}');
-    Object.assign(S, d);
-  } catch(e) {}
-}
 
 function showToast(msg, col) {
   var t = document.createElement('div');
@@ -357,12 +692,6 @@ function saveSettings() {
   saveState(); updateHero();
 }
 
-function applySettings() {
-  document.getElementById('s-bank').value = S.bank;
-  document.getElementById('s-day').value  = S.day;
-  document.getElementById('s-tax').value  = S.tax;
-  saveSettings();
-}
 
 function updateHero() {
   var pct = S.bank / 587000 * 100;
@@ -886,9 +1215,6 @@ function addPlayToPortfolio(p) {
   showToast('✅ Added ' + (p.ticker||'play') + ' to portfolio!');
 }
 
-function watchPlay(p) {
-  showToast('👁 Watching ' + (p.ticker||'play'));
-}
 
 
 function importPortfolio(event) {
@@ -982,18 +1308,18 @@ function renderPositions() {
     const direction = p.direction || 'YES';
     const qty = p.qty || '';
     const url = p.url || ('https://kalshi.com/markets/' + ticker.toLowerCase().split('-')[0]);
-    return `<div class="pos-row" style="background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:12px 14px;margin-bottom:6px;display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;border-left:3px solid ${pnl>=0?'#238636':'#da3633'};">
+    return `<div class="pos-row" style="border-left:3px solid ${pnl>=0?'var(--green)':'var(--red)'}">
       <div>
-        <div style="font-size:0.8rem;font-weight:600;color:#e6edf3;margin-bottom:2px;">${market}</div>
-        <div style="font-size:0.62rem;color:#484f58;font-family:DM Mono,monospace;letter-spacing:0.5px;">${ticker} · ${category.toUpperCase()} · ${direction} ${qty?'x'+qty:''} · entry ${entry}¢ · $${size.toFixed(0)} invested</div>
+        <div class="pos-market">${market}</div>
+        <div class="pos-meta">${ticker} · ${category.toUpperCase()} · ${direction}${qty?' x'+qty:''} · ${entry}¢ avg · $${size.toFixed(0)}</div>
       </div>
-      <div style="text-align:right;">
-        <div style="font-size:0.85rem;font-weight:700;color:${pnlColor};font-family:DM Mono,monospace;">${pnlStr}</div>
-        <div style="font-size:0.62rem;color:#484f58;">P&L</div>
+      <div>
+        <div class="pos-pnl" style="color:${pnlColor}">${pnlStr}</div>
+        <div class="pos-pnl-lbl">P&amp;L</div>
       </div>
-      <div style="display:flex;gap:5px;">
-        <a href="${url}" target="_blank" style="font-size:0.65rem;padding:5px 9px;background:#238636;color:#fff;border-radius:4px;text-decoration:none;font-family:DM Mono,monospace;font-weight:600;">↗</a>
-        <button onclick="removePosition(${i})" style="font-size:0.65rem;padding:5px 9px;background:transparent;color:#484f58;border:1px solid #21262d;border-radius:4px;cursor:pointer;font-family:DM Mono,monospace;">✕</button>
+      <div style="display:flex;gap:6px;">
+        <a href="${url}" target="_blank" class="pbtn pbtn-buy" style="padding:6px 10px;font-size:0.72rem;">↗</a>
+        <button onclick="removePosition(${i})" class="pbtn pbtn-skip" style="padding:6px 10px;">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -1082,103 +1408,6 @@ async function analyzePortfolio() {
 // ═══════════════════════════════════
 // PROJECTOR
 // ═══════════════════════════════════
-function drawProjection() {
-  const start = parseFloat(document.getElementById('pj-start').value) || 100;
-  const rate = parseFloat(document.getElementById('pj-rate').value) / 100;
-  const days = parseInt(document.getElementById('pj-days').value) || 35;
-  const taxRate = parseFloat(document.getElementById('pj-tax').value) / 100;
-
-  // Gross values (what account shows)
-  const vals = [start];
-  for (let i = 1; i <= days; i++) vals.push(+(vals[i-1] * (1 + rate)).toFixed(2));
-
-  // After-tax net profit
-  const aftertaxFinal = start + (vals[days] - start) * (1 - taxRate);
-
-  const target2x = start * 2; // gross 2x
-  const targetAfterTax = start + start * (1 / (1 - taxRate)); // after-tax 2x (net)
-
-  const W = 500, H = 200, px = 40, py = 20;
-  const maxV = Math.max(...vals, targetAfterTax);
-  const toX = i => px + (i / days) * (W - px * 2);
-  const toY = v => H - py - ((v - start) / (maxV - start || 1)) * (H - py * 2);
-
-  const pts = vals.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
-  const areaPoints = `${toX(0)},${H - py} ${pts} ${toX(days)},${H - py}`;
-
-  const t2xY = toY(target2x);
-  const tatY = toY(targetAfterTax);
-
-  let dayHit2x = vals.findIndex(v => v >= target2x);
-  let dayHitAfterTax = -1;
-  for (let i = 0; i <= days; i++) {
-    const net = start + (vals[i] - start) * (1 - taxRate);
-    if (net >= start * 2 && dayHitAfterTax === -1) dayHitAfterTax = i;
-  }
-
-  const svg = `
-    <defs>
-      <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#e8ff47" stop-opacity="0.2"/>
-        <stop offset="100%" stop-color="#e8ff47" stop-opacity="0.01"/>
-      </linearGradient>
-    </defs>
-    <!-- Target lines -->
-    <line x1="${px}" y1="${t2xY}" x2="${W-px}" y2="${t2xY}" stroke="#3d8eff" stroke-width="1" stroke-dasharray="5,4" opacity="0.5"/>
-    <text x="${W-px+4}" y="${t2xY+4}" fill="#3d8eff" font-size="9" font-family="DM Mono">2× gross</text>
-    <line x1="${px}" y1="${tatY}" x2="${W-px}" y2="${tatY}" stroke="#e8ff47" stroke-width="1" stroke-dasharray="5,4" opacity="0.6"/>
-    <text x="${W-px+4}" y="${tatY+4}" fill="#e8ff47" font-size="9" font-family="DM Mono">2× net</text>
-    <!-- Area fill -->
-    <polygon points="${areaPoints}" fill="url(#fillGrad)"/>
-    <!-- Main line -->
-    <polyline points="${pts}" fill="none" stroke="#e8ff47" stroke-width="2"/>
-    <!-- Start/end dots -->
-    <circle cx="${toX(0)}" cy="${toY(start)}" r="4" fill="#e8ff47"/>
-    <circle cx="${toX(days)}" cy="${toY(vals[days])}" r="4" fill="#e8ff47"/>
-    ${dayHit2x > 0 ? `<circle cx="${toX(dayHit2x)}" cy="${toY(target2x)}" r="5" fill="none" stroke="#3d8eff" stroke-width="2"/>` : ''}
-    ${dayHitAfterTax > 0 ? `<circle cx="${toX(dayHitAfterTax)}" cy="${toY(target2x)}" r="6" fill="none" stroke="#e8ff47" stroke-width="2"/>` : ''}
-    <!-- Axis labels -->
-    <text x="${toX(0)}" y="${H-2}" fill="#3d4a5c" font-size="9" font-family="DM Mono">D0</text>
-    <text x="${toX(Math.floor(days/2))}" y="${H-2}" fill="#3d4a5c" font-size="9" font-family="DM Mono" text-anchor="middle">D${Math.floor(days/2)}</text>
-    <text x="${toX(days)}" y="${H-2}" fill="#3d4a5c" font-size="9" font-family="DM Mono" text-anchor="end">D${days}</text>
-  `;
-  document.getElementById('proj-svg').innerHTML = svg;
-
-  // Results
-  const afterTaxFinalVal = start + (vals[days] - start) * (1 - taxRate);
-  document.getElementById('proj-results').innerHTML = `
-    <div class="proj-res-box"><div class="proj-res-val" style="color:var(--a1)">$${vals[days].toFixed(0)}</div><div class="proj-res-lbl">Gross on Day ${days}</div></div>
-    <div class="proj-res-box"><div class="proj-res-val" style="color:var(--a4)">$${afterTaxFinalVal.toFixed(0)}</div><div class="proj-res-lbl">After Tax</div></div>
-    <div class="proj-res-box"><div class="proj-res-val" style="color:var(--a2)">${dayHitAfterTax > 0 ? 'Day ' + dayHitAfterTax : '>Day ' + days}</div><div class="proj-res-lbl">2× After Tax</div></div>
-  `;
-
-  // Table
-  let tbl = '';
-  for (let i = 1; i <= days; i++) {
-    const v = vals[i];
-    const net = start + (v - start) * (1 - taxRate);
-    const is2x = net >= start * 2;
-    tbl += `<div style="background:${is2x ? 'rgba(232,255,71,0.1)' : 'var(--s2)'};border:1px solid ${is2x ? 'rgba(232,255,71,0.3)' : 'var(--border)'};border-radius:5px;padding:7px;text-align:center;">
-      <div style="font-family:'DM Mono',monospace;font-size:0.55rem;color:var(--dim);">Day ${i}</div>
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:1rem;color:${is2x ? 'var(--a1)' : 'var(--bright)'};">$${v.toFixed(0)}</div>
-      <div style="font-size:0.55rem;color:var(--dim);">~$${net.toFixed(0)} net</div>
-      ${is2x ? '<div style="font-size:0.5rem;color:var(--a1)">✓ 2×</div>' : ''}
-    </div>`;
-  }
-  document.getElementById('proj-table').innerHTML = tbl;
-
-  // Scenarios
-  const scens = [{r:1,l:'Bear',c:'var(--a3)'},{r:1.5,l:'Slow',c:'var(--mid)'},{r:2,l:'Target',c:'var(--a1)'},{r:3,l:'Bull',c:'var(--a2)'},{r:5,l:'Best',c:'var(--a4)'}];
-  document.getElementById('proj-scenarios').innerHTML = scens.map(s => {
-    const final = start * Math.pow(1 + s.r/100, days);
-    const net = start + (final - start) * (1 - taxRate);
-    return `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:14px;text-align:center;border-top:2px solid ${s.c};">
-      <div style="font-family:'DM Mono',monospace;font-size:0.58rem;color:var(--dim);margin-bottom:6px;">${s.l} (${s.r}%/day)</div>
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:1.5rem;color:${s.c};">$${final.toFixed(0)}</div>
-      <div style="font-size:0.6rem;color:var(--dim);">$${net.toFixed(0)} after tax</div>
-    </div>`;
-  }).join('');
-}
 
 // ═══════════════════════════════════
 // CHECKLIST
@@ -1210,7 +1439,6 @@ function renderChecklist() {
   sc.style.color = done === CHK_ITEMS.length ? 'var(--a4)' : done >= 6 ? 'var(--a1)' : 'var(--dim)';
 }
 function toggleChk(i) { chkState[i] = !chkState[i]; renderChecklist(); }
-function resetChk() { chkState = {}; renderChecklist(); }
 </script>
 </body>
 </html>
