@@ -780,7 +780,7 @@ async function generatePlays() {
   btn.disabled = true;
   btn.textContent = '⟳ Building plays...';
 
-  const container = document.getElementById('plays-container');
+  const container = document.getElementById('plays-out');
   container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);display:flex;align-items:center;justify-content:center;gap:12px;"><div class="spinner"></div> AI building stratified 10-play sheet...</div>';
 
   const today = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
@@ -854,7 +854,7 @@ async function generatePlays() {
 }
 
 function renderPlayCards(plays) {
-  const container = document.getElementById('plays-container');
+  const container = document.getElementById('plays-out');
   if (!plays || !plays.length) {
     container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim);">No plays generated.</div>';
     return;
