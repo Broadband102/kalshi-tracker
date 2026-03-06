@@ -825,7 +825,7 @@ async function generatePlays() {
           `Return up to 10 plays as raw JSON — ONLY include plays where |fairValue - YES price| >= 15:\n` +
           `[{"num":1,"market":"title","ticker":"KXFED-27APR-T4.00","category":"Economics","direction":"YES","entryTarget":45,"fairValue":65,"edge":20,"confidence":72,"tier":1,"size":12,"reason":"one sentence","risk":"LOW","expiryEst":"Apr 28"}]\n\n` +
           `RULES: Only tickers from the list. No duplicates. Minimum 15 cent edge or skip. ` +
-          `Prefer longer-horizon contracts. Return fewer plays rather than padding. Raw JSON only.`
+          `Prefer longer-horizon contracts. Return fewer plays rather than padding. REQUIRE CATEGORY DIVERSITY — max 3 plays from any single series (e.g. no more than 3 KXTRUMPSAY). Spread across: Politics, Economics, Crypto, Climate, Science. Raw JSON only.`
         }]
       })
     });
@@ -863,7 +863,7 @@ function renderPlayCards(plays) {
   const tierColors = { 1: 'var(--a4)', 2: 'var(--a2)', 3: 'var(--a3)' };
 
   container.innerHTML = '<div class="plays-grid">' + plays.map(p => {
-    const isHeld = state.positions.some(pos => pos.market.toLowerCase().includes((p.market||'').toLowerCase().slice(0,10)));
+    const isHeld = (S.positions||[]).some(pos => pos.market.toLowerCase().includes((p.market||'').toLowerCase().slice(0,10)));
     const edgePct = Math.min(100, Math.max(0, p.edge || 0));
     const confPct = Math.min(100, Math.max(0, p.confidence || 50));
     const dirClass = p.direction === 'YES' ? 'pp-yes' : 'pp-no';
