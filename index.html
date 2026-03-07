@@ -433,11 +433,11 @@
       <button class="btn btn-blue" id="btn-fetch-markets" onclick="fetchMarkets()">⚡ Fetch Markets</button>
       <button class="btn btn-green" id="btn-analyze-markets" onclick="analyzeMarkets()" style="display:none;">🤖 AI: Best Plays</button>
       <!-- Today's Games toggle -->
-      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;" title="Show only straight head-to-head winner markets — hides spreads, totals, and props">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;" title="Show only today's straight head-to-head winner games — hides spreads, totals, props, and future games">
         <div id="today-toggle-track" onclick="toggleTodayFilter()" style="width:32px;height:18px;border-radius:9px;background:var(--border2);position:relative;transition:background 0.2s;flex-shrink:0;">
           <div id="today-toggle-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
         </div>
-        <span id="today-toggle-label" style="font-family:var(--mono);font-size:0.72rem;color:var(--mid);">MATCHUPS ONLY</span>
+        <span id="today-toggle-label" style="font-family:var(--mono);font-size:0.72rem;color:var(--mid);">TODAY'S MATCHUPS</span>
       </label>
       <select id="sort-select" onchange="sortMarkets()">
         <option value="volume">Sort: Volume</option>
@@ -467,7 +467,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.4.3</div>
+<div class="version-stamp">KALSHI/EDGE v1.4.4</div>
 
 <script>
 'use strict';
@@ -1315,6 +1315,24 @@ async function fetchMarkets() {
 
 var todayFilterOn = false;
 
+// Parse the game date embedded in the event ticker e.g. KXNHLGAME-26MAR07WSHBOS -> Mar 7 2026
+function parseDateFromTicker(ticker) {
+  var m = ticker.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})/i);
+  if (!m) return null;
+  var mo = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+  return new Date(2000 + parseInt(m[1]), mo[m[2].toUpperCase()], parseInt(m[3]));
+}
+
+function isToday(ticker) {
+  var d = parseDateFromTicker(ticker);
+  if (!d) return true; // no date in ticker — include it
+  var now = new Date();
+  // Compare in local calendar date (not UTC) — game on Mar 7 = Mar 7 wherever you are
+  return d.getFullYear() === now.getFullYear() &&
+         d.getMonth()    === now.getMonth() &&
+         d.getDate()     === now.getDate();
+}
+
 function toggleTodayFilter() {
   todayFilterOn = !todayFilterOn;
   var track = document.getElementById('today-toggle-track');
@@ -1405,18 +1423,17 @@ function renderMatchCard(mg, aiRanks) {
   var is3way  = mg.is3way && tie;
 
   var kickoffStr = '';
-  if (mg.close_time) {
-    var d = new Date(mg.close_time);
+  var gameDate = parseDateFromTicker(mg.event_ticker);
+  if (gameDate) {
     var now = new Date();
-    var diffMs = d - now;
-    if (diffMs > 0) {
-      var diffH = Math.floor(diffMs / 3600000);
-      var diffD = Math.floor(diffH / 24);
-      kickoffStr = diffD > 1 ? diffD + 'd' : diffH > 0 ? diffH + 'h' : 'soon';
+    var diffDays = Math.round((gameDate - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+    if (diffDays === 0) {
+      kickoffStr = '🟢 TODAY';
+    } else if (diffDays === 1) {
+      kickoffStr = 'Tomorrow';
+    } else if (diffDays > 1) {
+      kickoffStr = gameDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
     }
-    // Show date if more than 1 day away
-    var dateLabel = d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
-    kickoffStr = kickoffStr ? dateLabel + ' · ' + kickoffStr : dateLabel;
   }
 
   var baseUrl  = kalshiUrl(mg.home.ticker, mg.event_ticker, mg.seriesTicker);
@@ -1510,9 +1527,22 @@ function renderMarketGrid() {
   var matchGroups = grouped.matchGroups;
   var singles     = grouped.singles;
 
-  // ── Matchups Only filter ────────────────────────────────────────────────
+  // ── TODAY'S MATCHUPS filter ────────────────────────────────────────────
   if (todayFilterOn) {
-    singles = []; // hide all props, spreads, totals — matchups only
+    // Keep only match groups where the event ticker date = today
+    matchGroups = matchGroups.filter(function(mg) {
+      return isToday(mg.event_ticker);
+    });
+    // Hide all singles (spreads, totals, props)
+    singles = [];
+    // Sort today's games by game time (earliest first), not volume
+    matchGroups.sort(function(a, b) {
+      var da = parseDateFromTicker(a.event_ticker) || new Date(9999,0,1);
+      var db = parseDateFromTicker(b.event_ticker) || new Date(9999,0,1);
+      // Secondary sort by series (group same sport together)
+      if (da - db === 0) return (a.seriesTicker||'').localeCompare(b.seriesTicker||'');
+      return da - db;
+    });
   }
 
   if (sort === 'volume') {
