@@ -234,7 +234,7 @@
 
 <div class="topbar">
   <div class="topbar-logo">KALSHI<span>/EDGE</span></div>
-  <input class="proxy-input" id="proxy-url" placeholder="Proxy URL — e.g. https://kalshi-proxy.workers.dev" oninput="saveProxy()">
+  <input class="proxy-input" id="proxy-url" placeholder="Proxy URL — e.g. https://kalshi-proxy.workers.dev" oninput="saveProxy()" style="display:none;">
   <div class="cost-badge">
     <span>CALLS <b id="api-count">0 Kalshi · 0 Claude</b></span>
     <span>CLAUDE COST <b id="api-cost">$0.000</b></span>
@@ -303,81 +303,77 @@
 <!-- ══════════════ ANALYTICS TAB ══════════════ -->
 <div class="panel" id="panel-analytics">
   <div class="card">
-    <div class="card-title">📊 P&amp;L Analytics &amp; Account Overview</div>
+    <div class="card-title">📊 P&amp;L Analytics</div>
     <div style="font-size:0.83rem;color:var(--mid);margin-bottom:14px;line-height:1.6;">
-      Paste your trade &amp; settlement history from <a href="https://kalshi.com/account/activity" target="_blank" style="color:var(--blue);">kalshi.com/account/activity</a> to analyze realized P&amp;L, win rates, and performance over time. You can also let AI read your live Kalshi account.
+      Download your CSVs from <a href="https://kalshi.com/account/activity" target="_blank" style="color:var(--blue);">kalshi.com/account/activity</a> using the ↓ button. Import both your Trade and Settlement files below.
     </div>
-    <!-- Live Kalshi scrape -->
-    <div class="flex-row" style="margin-bottom:12px;">
-      <button class="btn btn-green" onclick="scrapeKalshiActivity()" id="btn-scrape">🔗 Read from Kalshi (live tab)</button>
-      <button class="btn btn-blue" onclick="runAnalyticsAI()" id="btn-analytics-ai">🤖 AI Account Analysis</button>
+    <div class="flex-row" style="flex-wrap:wrap;gap:8px;">
+      <label class="btn btn-blue" style="cursor:pointer;">
+        📥 Import Trade CSV
+        <input type="file" accept=".csv" onchange="importActivityCsv(event,'trade')" style="display:none;">
+      </label>
+      <label class="btn btn-green" style="cursor:pointer;">
+        🏁 Import Settlement CSV
+        <input type="file" accept=".csv" onchange="importActivityCsv(event,'settlement')" style="display:none;">
+      </label>
       <button class="btn btn-ghost" onclick="clearAnalytics()">✕ Clear</button>
+      <button class="btn" style="background:rgba(74,153,233,0.15);border-color:var(--blue);color:var(--blue);" onclick="runAnalyticsAI()" id="btn-analytics-ai" disabled>🤖 AI Coach</button>
     </div>
-    <div id="analytics-scrape-status" style="font-size:0.78rem;color:var(--dim);margin-bottom:8px;"></div>
-    <!-- Manual paste area -->
-    <div style="margin-bottom:10px;">
-      <div style="font-size:0.75rem;color:var(--mid);margin-bottom:6px;">OR paste activity text from Kalshi (copy all text from the activity page):</div>
-      <textarea id="analytics-paste" rows="6" placeholder="Paste text from kalshi.com/account/activity here — include trades, settlements, deposits..."
-        style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:0.75rem;padding:10px;resize:vertical;outline:none;"
-        oninput="parseActivityPaste(this.value)"></textarea>
-    </div>
+    <div id="analytics-import-status" style="font-size:0.78rem;color:var(--dim);margin-top:8px;min-height:18px;"></div>
     <!-- Date range filter -->
-    <div class="flex-row" style="gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+    <div class="flex-row" style="gap:10px;margin-top:10px;flex-wrap:wrap;">
       <label style="font-size:0.75rem;color:var(--mid);">From: <input type="date" id="filter-from" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 6px;font-size:0.75rem;" onchange="renderAnalytics()"></label>
       <label style="font-size:0.75rem;color:var(--mid);">To: <input type="date" id="filter-to" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 6px;font-size:0.75rem;" onchange="renderAnalytics()"></label>
       <select id="filter-type" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 8px;font-size:0.75rem;" onchange="renderAnalytics()">
         <option value="all">All activity</option>
         <option value="trade">Trades only</option>
         <option value="settlement">Settlements only</option>
-        <option value="deposit">Deposits/Withdrawals</option>
       </select>
     </div>
   </div>
 
-  <!-- Stats summary cards -->
+  <!-- Stats -->
   <div id="analytics-stats" style="display:none;">
     <div class="portfolio-grid" style="margin-bottom:12px;">
-      <div class="stat-box" id="as-cash-box">
-        <div class="stat-label">Cash Balance</div>
-        <div class="stat-val" id="as-cash">—</div>
-        <div style="font-size:0.65rem;color:var(--dim);">live from Kalshi</div>
+      <div class="stat-box" style="border-color:var(--green);">
+        <div class="stat-label">Settled Wins</div>
+        <div class="stat-val" id="as-wins" style="color:var(--green);">—</div>
       </div>
-      <div class="stat-box" id="as-portfolio-box">
-        <div class="stat-label">Portfolio Value</div>
-        <div class="stat-val" id="as-portfolio">—</div>
-        <div style="font-size:0.65rem;color:var(--dim);">open positions</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Total Value</div>
-        <div class="stat-val" id="as-total" style="color:var(--yellow);">—</div>
-        <div style="font-size:0.65rem;color:var(--dim);">cash + portfolio</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Realized P&amp;L</div>
-        <div class="stat-val" id="as-realized">—</div>
-        <div style="font-size:0.65rem;color:var(--dim);">settled outcomes</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Total Deposited</div>
-        <div class="stat-val" id="as-deposited">—</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-label">Net Return</div>
-        <div class="stat-val" id="as-netreturn">—</div>
-        <div style="font-size:0.65rem;color:var(--dim);">vs total deposited</div>
+      <div class="stat-box" style="border-color:var(--red);">
+        <div class="stat-label">Settled Losses</div>
+        <div class="stat-val" id="as-losses" style="color:var(--red);">—</div>
       </div>
       <div class="stat-box">
         <div class="stat-label">Win Rate</div>
         <div class="stat-val" id="as-winrate">—</div>
-        <div style="font-size:0.65rem;color:var(--dim);">settled contracts</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Total Fees Paid</div>
+        <div class="stat-label">Realized P&amp;L</div>
+        <div class="stat-val" id="as-realized">—</div>
+        <div style="font-size:0.65rem;color:var(--dim);">profit from wins</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total Spent</div>
+        <div class="stat-val" id="as-spent">—</div>
+        <div style="font-size:0.65rem;color:var(--dim);">all trade costs</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total Fees</div>
         <div class="stat-val" id="as-fees" style="color:var(--red);">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Avg Trade Size</div>
+        <div class="stat-val" id="as-avgsize">—</div>
+        <div style="font-size:0.65rem;color:var(--dim);">contracts × price</div>
+      </div>
+      <div class="stat-box" style="border-color:var(--yellow);">
+        <div class="stat-label">Net P&amp;L (realized)</div>
+        <div class="stat-val" id="as-net" style="color:var(--yellow);">—</div>
+        <div style="font-size:0.65rem;color:var(--dim);">profit − fees</div>
       </div>
     </div>
 
-    <!-- AI Analysis result -->
+    <!-- AI result -->
     <div id="analytics-ai-result" style="display:none;margin-bottom:12px;"></div>
 
     <!-- Activity table -->
@@ -386,11 +382,10 @@
         <div style="font-family:var(--mono);font-size:0.75rem;font-weight:700;color:var(--mid);">ACTIVITY LOG</div>
         <span id="analytics-count" style="font-size:0.72rem;color:var(--dim);"></span>
       </div>
-      <div id="analytics-table" style="max-height:500px;overflow-y:auto;"></div>
+      <div id="analytics-table" style="max-height:520px;overflow-y:auto;"></div>
     </div>
   </div>
-
-  <div id="analytics-empty" class="empty">Paste activity text above or click "Read from Kalshi" to analyze your account history.</div>
+  <div id="analytics-empty" class="empty">Import your Trade CSV and/or Settlement CSV from Kalshi to see your P&amp;L breakdown.</div>
 </div>
 
 <!-- ══════════════ AI ADVISOR TAB ══════════════ -->
@@ -597,8 +592,7 @@ function save() {
 }
 
 function getProxy() {
-  return document.getElementById('proxy-url').value.trim() ||
-         S.proxyUrl || '';
+  return 'https://kalshi-proxy.duracraftboat.workers.dev';
 }
 function saveProxy() {
   S.proxyUrl = document.getElementById('proxy-url').value.trim();
@@ -1516,206 +1510,197 @@ function saveCash(val) {
 
 function updateTotalValue() {
   var cash = S.cashBalance || 0;
-  var invested = S.positions ? S.positions.reduce(function(a,p){ return a + (p.liveCents > 0 ? p.qty * p.liveCents / 100 : p.invested); }, 0) : 0;
-  var total = cash + invested;
+  var invested = S.positions ? S.positions.reduce(function(a,p){
+    return a + (p.liveCents > 0 ? p.qty * p.liveCents / 100 : p.invested);
+  }, 0) : 0;
   var el = document.getElementById('pt-total');
-  if (el) el.textContent = '$' + total.toFixed(2);
+  if (el) el.textContent = '$' + (cash + invested).toFixed(2);
   var ci = document.getElementById('cash-input');
   if (ci && !ci.value && cash > 0) ci.value = cash.toFixed(2);
 }
 
 // ── ANALYTICS STATE ───────────────────────────────────────────────────────────
-var analyticsEntries = []; // parsed activity entries
+var analyticsTradeRows  = [];
+var analyticsSettleRows = [];
 
 function clearAnalytics() {
-  analyticsEntries = [];
-  document.getElementById('analytics-paste').value = '';
+  analyticsTradeRows = [];
+  analyticsSettleRows = [];
   document.getElementById('analytics-stats').style.display = 'none';
   document.getElementById('analytics-empty').style.display = '';
   document.getElementById('analytics-ai-result').style.display = 'none';
-  document.getElementById('analytics-scrape-status').textContent = '';
+  document.getElementById('analytics-import-status').textContent = '';
+  document.getElementById('btn-analytics-ai').disabled = true;
 }
 
-// ── PARSE ACTIVITY PASTE ──────────────────────────────────────────────────────
-function parseActivityPaste(text) {
-  if (!text || text.trim().length < 20) return;
-  var entries = [];
-  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-
-  // Extract cash/portfolio from header if present
-  var cashMatch = text.match(/\$([0-9.]+)\s*\nCash/);
-  var portfolioMatch = text.match(/\$([0-9.]+)\s*\nPortfolio/);
-  if (cashMatch) {
-    var el = document.getElementById('as-cash');
-    if (el) { el.textContent = '$' + cashMatch[1]; el.style.color = 'var(--green)'; }
-    // Also update main cash input
-    var ci = document.getElementById('cash-input');
-    if (ci) { ci.value = cashMatch[1]; saveCash(cashMatch[1]); }
+// ── CSV PARSER ───────────────────────────────────────────────────────────────
+function parseCsvRows(text) {
+  text = text.replace(/^\uFEFF/, '');
+  var lines = text.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+  if (!lines.length) return [];
+  var headers = splitCsvLine(lines[0]).map(function(h){ return h.replace(/^"|"$/g,'').toLowerCase().trim(); });
+  var rows = [];
+  for (var i = 1; i < lines.length; i++) {
+    var vals = splitCsvLine(lines[i]);
+    var row = {};
+    headers.forEach(function(h, j){ row[h] = (vals[j] || '').replace(/^"|"$/g,'').trim(); });
+    rows.push(row);
   }
-  if (portfolioMatch) {
-    var el2 = document.getElementById('as-portfolio');
-    if (el2) { el2.textContent = '$' + portfolioMatch[1]; el2.style.color = 'var(--yellow)'; }
-    var tot = (parseFloat(cashMatch && cashMatch[1] || 0) + parseFloat(portfolioMatch[1])).toFixed(2);
-    var totEl = document.getElementById('as-total');
-    if (totEl) { totEl.textContent = '$' + tot; }
+  return rows;
+}
+
+function splitCsvLine(line) {
+  var result = [], cur = '', inQ = false;
+  for (var i = 0; i < line.length; i++) {
+    var c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += c; }
   }
+  result.push(cur);
+  return result;
+}
 
-  // State machine parse: look for activity type lines
-  var typePattern = /^(Trade completed|Settlement settled to (Yes|No)|Deposit|Withdrawal|Credit|Order)/i;
-  var datePattern = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d+/i;
-  var amountPattern = /^(\d+)$/;
-  var pricePattern = /^(\d+)¢$/;
-  var feePattern = /^\$([0-9.]+)$/;
-  var directionPattern = /^(Yes|No)$/i;
-
-  var i = 0;
-  while (i < lines.length) {
-    var line = lines[i];
-    if (typePattern.test(line)) {
-      var entry = { type: '', date: '', description: '', amount: 0, price: 0, fee: 0, direction: '', raw: line };
-      // Determine type
-      if (/Trade/i.test(line)) entry.type = 'trade';
-      else if (/Settlement settled to Yes/i.test(line)) { entry.type = 'settlement'; entry.result = 'win'; }
-      else if (/Settlement settled to No/i.test(line)) { entry.type = 'settlement'; entry.result = 'loss'; }
-      else if (/Deposit/i.test(line)) entry.type = 'deposit';
-      else if (/Withdrawal/i.test(line)) entry.type = 'withdrawal';
-      else if (/Credit/i.test(line)) entry.type = 'credit';
-      else entry.type = 'order';
-
-      i++;
-      // Next line: date + time
-      if (i < lines.length && datePattern.test(lines[i])) {
-        entry.date = lines[i]; i++;
+// ── IMPORT ACTIVITY CSV ───────────────────────────────────────────────────────
+function importActivityCsv(event, csvType) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var rows = parseCsvRows(e.target.result);
+      if (csvType === 'trade') {
+        analyticsTradeRows = rows.filter(function(r){ return (r.type||'').toLowerCase().includes('trade'); });
+        if (!analyticsTradeRows.length) analyticsTradeRows = rows;
+      } else {
+        analyticsSettleRows = rows.filter(function(r){ return (r.type||'').toLowerCase().includes('settlement'); });
+        if (!analyticsSettleRows.length) analyticsSettleRows = rows;
       }
-      // Next non-empty line: description (skip time if separate)
-      while (i < lines.length && /^\d+:\d+/.test(lines[i])) i++; // skip time
-      if (i < lines.length && !typePattern.test(lines[i]) && !datePattern.test(lines[i])) {
-        entry.description = lines[i]; i++;
+      document.getElementById('analytics-import-status').textContent =
+        'Loaded — ' + analyticsTradeRows.length + ' trades · ' + analyticsSettleRows.length + ' settlements';
+      var total = analyticsTradeRows.length + analyticsSettleRows.length;
+      if (total > 0) {
+        document.getElementById('btn-analytics-ai').disabled = false;
+        renderAnalytics();
       }
-      // Look ahead for Amount/Price/Fee/Direction fields
-      var lookahead = 0;
-      while (lookahead < 8 && i + lookahead < lines.length) {
-        var lk = lines[i + lookahead];
-        if (lk === 'Amount') { if (lines[i+lookahead+1]) { entry.amount = parseInt(lines[i+lookahead+1]) || 0; } lookahead += 2; }
-        else if (lk === 'Price') { if (lines[i+lookahead+1]) { entry.price = parseInt(lines[i+lookahead+1]) || 0; } lookahead += 2; }
-        else if (lk === 'Fee') { if (lines[i+lookahead+1]) { entry.fee = parseFloat(lines[i+lookahead+1].replace('$','')) || 0; } lookahead += 2; }
-        else if (lk === 'Direction') { if (lines[i+lookahead+1]) { entry.direction = lines[i+lookahead+1]; } lookahead += 2; }
-        else if (lk === 'Deposit amount' || lk === 'Withdrawal amount' || lk === 'Credit amount') {
-          if (lines[i+lookahead+1]) { entry.amount = parseFloat(lines[i+lookahead+1].replace('$','')) || 0; } lookahead += 2;
-        }
-        else break;
-      }
-      i += lookahead;
-      // Calculate cost/value for trades
-      if (entry.type === 'trade') {
-        entry.cost = (entry.amount * entry.price / 100) + entry.fee; // total spent buying
-        entry.contracts = entry.amount;
-        entry.priceCents = entry.price;
-      }
-      entries.push(entry);
-    } else { i++; }
-  }
-
-  analyticsEntries = entries;
-  renderAnalytics();
+    } catch(err) {
+      document.getElementById('analytics-import-status').textContent = 'Parse error: ' + err.message;
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // ── RENDER ANALYTICS ─────────────────────────────────────────────────────────
 function renderAnalytics() {
-  if (!analyticsEntries.length) return;
+  var allRows = analyticsTradeRows.concat(analyticsSettleRows);
+  if (!allRows.length) return;
 
-  var fromDate = document.getElementById('filter-from').value;
-  var toDate   = document.getElementById('filter-to').value;
+  var fromVal = document.getElementById('filter-from').value;
+  var toVal   = document.getElementById('filter-to').value;
   var typeFilter = document.getElementById('filter-type').value;
 
-  // Filter
-  var filtered = analyticsEntries.filter(function(e) {
-    if (typeFilter !== 'all') {
-      if (typeFilter === 'trade' && e.type !== 'trade') return false;
-      if (typeFilter === 'settlement' && e.type !== 'settlement') return false;
-      if (typeFilter === 'deposit' && e.type !== 'deposit' && e.type !== 'withdrawal') return false;
-    }
+  function passesDate(r) {
+    var d = r.original_date || '';
+    if (!d) return true;
+    var ds = d.slice(0, 10);
+    if (fromVal && ds < fromVal) return false;
+    if (toVal   && ds > toVal)   return false;
     return true;
-  });
+  }
 
-  // Compute stats
-  var trades      = analyticsEntries.filter(function(e){ return e.type === 'trade'; });
-  var settlements = analyticsEntries.filter(function(e){ return e.type === 'settlement'; });
-  var deposits    = analyticsEntries.filter(function(e){ return e.type === 'deposit'; });
-  var withdrawals = analyticsEntries.filter(function(e){ return e.type === 'withdrawal'; });
+  var trades  = analyticsTradeRows.filter(passesDate);
+  var settles = analyticsSettleRows.filter(passesDate);
 
-  var wins   = settlements.filter(function(e){ return e.result === 'win'; }).length;
-  var losses = settlements.filter(function(e){ return e.result === 'loss'; }).length;
-  var winRate = (wins + losses) > 0 ? Math.round(wins / (wins + losses) * 100) : 0;
+  var wins      = settles.filter(function(r){ return (r.result||'').toLowerCase() === 'yes'; });
+  var losses    = settles.filter(function(r){ return (r.result||'').toLowerCase() === 'no'; });
+  var winCount  = wins.length;
+  var lossCount = losses.length;
+  var total     = winCount + lossCount;
+  var winRate   = total > 0 ? Math.round(winCount / total * 100) : 0;
 
-  var totalFees = trades.reduce(function(a,e){ return a + e.fee; }, 0);
-  var totalDeposited = deposits.reduce(function(a,e){ return a + e.amount; }, 0);
-  var totalWithdrawn = withdrawals.reduce(function(a,e){ return a + e.amount; }, 0);
+  var realizedProfit = wins.reduce(function(a,r){ return a+(parseFloat(r.profit_in_dollars)||0); }, 0);
+  var totalFees = trades.reduce(function(a,r){ return a+(parseFloat(r.fee_in_dollars)||0); }, 0);
+  var totalSpent = trades.reduce(function(a,r){ return a+(parseFloat(r.amount_in_dollars)||0)+(parseFloat(r.fee_in_dollars)||0); }, 0);
+  var avgSize = trades.length > 0 ? trades.reduce(function(a,r){ return a+(parseFloat(r.amount_in_dollars)||0); },0) / trades.length : 0;
+  var netPnL = realizedProfit - totalFees;
 
-  // Realized P&L: wins earn back 100¢ per contract; losses lose cost
-  // Approximate: for each settled Win, user got $1/contract; for loss, user lost cost
-  // We don't have the exact cost per settled contract from the text, so use wins×1 as proxy
-  // Better: sum all trade costs, subtract fees, estimate from settlement outcomes
-  var totalTradeCost = trades.reduce(function(a,e){ return a + e.cost; }, 0);
-  var estimatedWinnings = wins; // $1 per win (1 contract = $1 if Yes)
-  // Use cash + portfolio as ground truth if available
-  var cashEl   = document.getElementById('as-cash');
-  var portEl   = document.getElementById('as-portfolio');
-  var cashVal  = cashEl && cashEl.textContent !== '—' ? parseFloat(cashEl.textContent.replace('$','')) || 0 : (S.cashBalance || 0);
-  var portVal  = portEl && portEl.textContent !== '—' ? parseFloat(portEl.textContent.replace('$','')) || 0 : 0;
-  var totalVal = cashVal + portVal;
-  var realizedPnL = totalDeposited > 0 ? (totalVal - totalDeposited + totalWithdrawn) : null;
-  var netReturn = totalDeposited > 0 ? (realizedPnL / totalDeposited * 100) : null;
-
-  // Update stat boxes
   function setStat(id, val, color) {
     var el = document.getElementById(id);
-    if (el) { el.textContent = val; if (color) el.style.color = color; }
+    if (!el) return;
+    el.textContent = val;
+    if (color) el.style.color = color;
   }
-  setStat('as-realized', realizedPnL !== null ? (realizedPnL >= 0 ? '+' : '') + '$' + realizedPnL.toFixed(2) : wins + ' wins / ' + losses + ' losses',
-    realizedPnL !== null ? (realizedPnL >= 0 ? 'var(--green)' : 'var(--red)') : null);
-  setStat('as-deposited', '$' + totalDeposited.toFixed(2));
-  setStat('as-netreturn', netReturn !== null ? (netReturn >= 0 ? '+' : '') + netReturn.toFixed(1) + '%' : '—',
-    netReturn !== null ? (netReturn >= 0 ? 'var(--green)' : 'var(--red)') : null);
-  setStat('as-winrate', winRate + '% (' + wins + '/' + (wins+losses) + ')',
-    winRate >= 55 ? 'var(--green)' : winRate >= 40 ? 'var(--yellow)' : 'var(--red)');
+  setStat('as-wins', winCount + ' win' + (winCount !== 1 ? 's' : ''));
+  setStat('as-losses', lossCount + ' loss' + (lossCount !== 1 ? 'es' : ''));
+  setStat('as-winrate', total > 0 ? winRate + '% (' + winCount + '/' + total + ')' : '—',
+    winRate >= 55 ? 'var(--green)' : winRate >= 40 ? 'var(--yellow)' : winRate > 0 ? 'var(--red)' : null);
+  setStat('as-realized', (realizedProfit >= 0 ? '+' : '') + '$' + realizedProfit.toFixed(2),
+    realizedProfit >= 0 ? 'var(--green)' : 'var(--red)');
+  setStat('as-spent', '$' + totalSpent.toFixed(2));
   setStat('as-fees', '-$' + totalFees.toFixed(2));
-  if (totalVal > 0) {
-    setStat('as-total', '$' + totalVal.toFixed(2));
-  }
+  setStat('as-avgsize', '$' + avgSize.toFixed(2));
+  setStat('as-net', (netPnL >= 0 ? '+' : '') + '$' + netPnL.toFixed(2),
+    netPnL >= 0 ? 'var(--green)' : 'var(--red)');
 
-  // Render activity table
+  // Build display rows
+  var displayRows = [];
+  if (typeFilter !== 'settlement') trades.forEach(function(r){ displayRows.push({t:'trade', r:r}); });
+  if (typeFilter !== 'trade')      settles.forEach(function(r){ displayRows.push({t:'settlement', r:r}); });
+  displayRows.sort(function(a,b){ return new Date(b.r.original_date||0) - new Date(a.r.original_date||0); });
+
   var tableEl = document.getElementById('analytics-table');
-  var countEl = document.getElementById('analytics-count');
-  countEl.textContent = filtered.length + ' entries';
+  document.getElementById('analytics-count').textContent = displayRows.length + ' entries';
 
-  var typeColors = { trade:'var(--blue)', settlement:'var(--green)', deposit:'var(--yellow)', withdrawal:'var(--red)', credit:'var(--mid)', order:'var(--dim)' };
-  var typeIcons  = { trade:'⚡', settlement:'🏁', deposit:'💰', withdrawal:'💸', credit:'🎁', order:'📋' };
+  tableEl.innerHTML = displayRows.slice(0, 300).map(function(item) {
+    var r = item.r, isTrade = item.t === 'trade';
+    var won = (r.result||'').toLowerCase() === 'yes';
+    var color = isTrade ? 'var(--blue)' : (won ? 'var(--green)' : 'var(--red)');
+    var icon  = isTrade ? '\u26A1' : (won ? '\u2705' : '\u274C');
+    var label = isTrade ? 'TRADE' : ('SETTLE ' + (r.result||'?').toUpperCase());
 
-  tableEl.innerHTML = filtered.slice(0, 200).map(function(e) {
-    var tc = typeColors[e.type] || 'var(--dim)';
-    var icon = typeIcons[e.type] || '•';
-    var detailStr = '';
-    if (e.type === 'trade') {
-      detailStr = e.contracts + ' contracts @ ' + e.priceCents + '¢ ' + (e.direction ? '(' + e.direction + ')' : '') +
-        (e.fee ? ' · fee $' + e.fee.toFixed(2) : '') +
-        ' · cost $' + e.cost.toFixed(2);
-    } else if (e.type === 'settlement') {
-      detailStr = '<span style="color:' + (e.result === 'win' ? 'var(--green)' : 'var(--red)') + ';font-weight:700;">' +
-        (e.result === 'win' ? '✓ WIN' : '✗ LOSS') + '</span>';
-    } else if (e.type === 'deposit' || e.type === 'withdrawal') {
-      detailStr = '$' + (e.amount || 0).toFixed(2);
+    var dateStr = '';
+    if (r.original_date) {
+      var d = new Date(r.original_date);
+      if (!isNaN(d)) dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}) + (r.traded_time ? ' ' + r.traded_time : '');
     }
 
-    return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 16px;border-bottom:1px solid var(--border);font-size:0.78rem;">' +
-      '<span style="font-size:1rem;flex-shrink:0;width:20px;">' + icon + '</span>' +
+    var ticker = r.market_ticker || '';
+    var seriesT = ticker.split('-')[0];
+    var eventT  = ticker.split('-').slice(0,2).join('-');
+    var mktUrl = ticker ? ('https://kalshi.com/markets/' + seriesT.toLowerCase() + '/' + (seriesSlugCache[seriesT] || eventT.toLowerCase()) + '/' + eventT.toLowerCase()) : '';
+
+    var detail = '';
+    if (isTrade) {
+      var contracts = parseFloat(r.amount_in_dollars)||0;
+      var priceCents = parseFloat(r.price_in_cents)||0;
+      var fee = parseFloat(r.fee_in_dollars)||0;
+      detail = contracts + ' contracts \u00B7 ' + (r.direction||'?') + ' @ ' + priceCents + '\u00A2' +
+        (fee ? ' \u00B7 fee $' + fee.toFixed(2) : '') +
+        (r.order_type ? ' \u00B7 ' + r.order_type : '') +
+        ' \u00B7 total $' + ((contracts * priceCents / 100) + fee).toFixed(2);
+    } else {
+      var yesOwned = parseInt(r.yes_contracts_owned)||0;
+      var noOwned  = parseInt(r.no_contracts_owned)||0;
+      var profit   = parseFloat(r.profit_in_dollars)||0;
+      var ownedC   = won ? yesOwned : noOwned;
+      var avgP     = won ? (parseFloat(r.yes_contracts_average_price_in_cents)||0) : (parseFloat(r.no_contracts_average_price_in_cents)||0);
+      detail = (won ? 'YES' : 'NO') + ' settled \u00B7 ' + ownedC + ' contracts @ avg ' + avgP.toFixed(0) + '\u00A2' +
+        ' \u00B7 profit $' + profit.toFixed(2);
+    }
+
+    var titleText = r.market_title || ticker;
+
+    return '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 16px;border-bottom:1px solid var(--border);">' +
+      '<span style="font-size:1rem;flex-shrink:0;width:20px;padding-top:1px;">' + icon + '</span>' +
       '<div style="flex:1;min-width:0;">' +
-        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;">' +
-          '<span style="font-family:var(--mono);font-size:0.65rem;font-weight:700;color:' + tc + ';background:rgba(0,0,0,0.3);border:1px solid ' + tc + ';border-radius:3px;padding:1px 6px;">' + e.type.toUpperCase() + '</span>' +
-          '<span style="color:var(--dim);font-size:0.7rem;">' + (e.date || '') + '</span>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:3px;">' +
+          '<span style="font-family:var(--mono);font-size:0.62rem;font-weight:700;color:' + color + ';background:rgba(0,0,0,0.3);border:1px solid ' + color + ';border-radius:3px;padding:1px 6px;">' + label + '</span>' +
+          '<span style="color:var(--dim);font-size:0.7rem;">' + dateStr + '</span>' +
+          (ticker ? '<a href="' + mktUrl + '" target="_blank" style="font-family:var(--mono);font-size:0.65rem;color:var(--blue);text-decoration:none;">' + ticker + ' \u2197</a>' : '') +
         '</div>' +
-        '<div style="color:var(--text);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (e.description||'') + '">' + (e.description || e.raw || '') + '</div>' +
-        (detailStr ? '<div style="color:var(--mid);font-family:var(--mono);font-size:0.7rem;">' + detailStr + '</div>' : '') +
+        (titleText && titleText !== ticker ? '<div style="color:var(--text);font-size:0.8rem;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + titleText + '">' + titleText.slice(0,100) + '</div>' : '') +
+        '<div style="color:var(--mid);font-family:var(--mono);font-size:0.7rem;">' + detail + '</div>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -1724,51 +1709,30 @@ function renderAnalytics() {
   document.getElementById('analytics-empty').style.display = 'none';
 }
 
-// ── SCRAPE LIVE FROM KALSHI TAB ───────────────────────────────────────────────
-async function scrapeKalshiActivity() {
-  var btn = document.getElementById('btn-scrape');
-  var statusEl = document.getElementById('analytics-scrape-status');
-  btn.disabled = true;
-  statusEl.textContent = '⏳ Looking for Kalshi activity tab...';
-
-  // Can't cross-origin scrape directly — guide user to paste
-  // But we can try to read window.opener or use a chrome extension bridge
-  // For now: instruct user and pre-fill the paste hint
-  statusEl.innerHTML = '💡 <strong>To read live data:</strong> Go to <a href="https://kalshi.com/account/activity" target="_blank" style="color:var(--blue);">kalshi.com/account/activity</a>, ' +
-    'press <kbd style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:0.75rem;">Ctrl+A</kbd> then ' +
-    '<kbd style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:0.75rem;">Ctrl+C</kbd> to copy all, ' +
-    'then paste into the box above. Cash &amp; Portfolio values in the page header will be detected automatically.';
-  btn.disabled = false;
-}
-
-// ── AI ACCOUNT ANALYSIS ────────────────────────────────────────────────────────
+// ── AI TRADING COACH ──────────────────────────────────────────────────────────
 async function runAnalyticsAI() {
   var proxy = getProxy();
-  if (!proxy) { toast('⚠️ Set proxy URL in top bar', true); return; }
-  if (!analyticsEntries.length) { toast('⚠️ Paste activity data first', true); return; }
+  if (!proxy) { toast('Set proxy URL in top bar', true); return; }
 
   var btn = document.getElementById('btn-analytics-ai');
   var resultEl = document.getElementById('analytics-ai-result');
   btn.disabled = true;
   resultEl.style.display = '';
-  resultEl.innerHTML = '<div class="card" style="border-color:var(--blue);"><span class="spinner">⏳</span> AI is analyzing your trading history...</div>';
+  resultEl.innerHTML = '<div class="card" style="border-color:var(--blue);"><span class="spinner">\u23F3</span> AI Trading Coach analyzing...</div>';
 
-  // Build summary for AI
-  var trades      = analyticsEntries.filter(function(e){ return e.type === 'trade'; });
-  var settlements = analyticsEntries.filter(function(e){ return e.type === 'settlement'; });
-  var wins   = settlements.filter(function(e){ return e.result === 'win'; }).length;
-  var losses = settlements.filter(function(e){ return e.result === 'loss'; }).length;
-  var totalFees = trades.reduce(function(a,e){ return a + e.fee; }, 0);
-  var cashEl   = document.getElementById('as-cash');
-  var portEl   = document.getElementById('as-portfolio');
-  var cashVal  = cashEl && cashEl.textContent !== '—' ? cashEl.textContent : (S.cashBalance ? '$' + S.cashBalance : 'unknown');
-  var portVal  = portEl && portEl.textContent !== '—' ? portEl.textContent : 'unknown';
+  var wins   = analyticsSettleRows.filter(function(r){ return (r.result||'').toLowerCase() === 'yes'; });
+  var losses = analyticsSettleRows.filter(function(r){ return (r.result||'').toLowerCase() === 'no'; });
+  var totalFees = analyticsTradeRows.reduce(function(a,r){ return a+(parseFloat(r.fee_in_dollars)||0); }, 0);
+  var realizedProfit = wins.reduce(function(a,r){ return a+(parseFloat(r.profit_in_dollars)||0); }, 0);
 
-  // Send top 30 most recent entries to AI
-  var activitySample = analyticsEntries.slice(0, 30).map(function(e, i) {
-    return (i+1) + '. [' + e.type.toUpperCase() + '] ' + (e.date||'') + ' — ' + (e.description||'').slice(0,80) +
-      (e.type === 'trade' ? ' | ' + e.contracts + ' @ ' + e.priceCents + '¢ ' + (e.direction||'') + ' fee=$' + e.fee.toFixed(2) : '') +
-      (e.type === 'settlement' ? ' | ' + (e.result === 'win' ? 'WIN' : 'LOSS') : '');
+  var tradeSummary = analyticsTradeRows.slice(0, 25).map(function(r,i){
+    return (i+1)+'. [TRADE] '+(r.original_date||'').slice(0,10)+' | '+(r.market_ticker||'')+
+      ' | '+(r.direction||'?')+' '+(r.amount_in_dollars||'?')+'x @ '+(r.price_in_cents||'?')+'c fee=$'+(parseFloat(r.fee_in_dollars)||0).toFixed(2);
+  }).join('\n');
+
+  var settleSummary = analyticsSettleRows.slice(0, 20).map(function(r,i){
+    return (i+1)+'. [SETTLE '+(r.result||'?').toUpperCase()+'] '+(r.original_date||'').slice(0,10)+' | '+
+      (r.market_ticker||'')+' | profit=$'+(parseFloat(r.profit_in_dollars)||0).toFixed(2);
   }).join('\n');
 
   try {
@@ -1781,47 +1745,47 @@ async function runAnalyticsAI() {
         max_tokens: 2000,
         tools: [{type:'web_search_20250305', name:'web_search'}],
         messages: [{role:'user', content:
-          'You are a trading coach analyzing a Kalshi prediction market account.\n\n' +
-          'ACCOUNT STATUS:\n' +
-          'Cash: ' + cashVal + '\n' +
-          'Portfolio value: ' + portVal + '\n' +
-          'Trades made: ' + trades.length + '\n' +
-          'Contracts settled: ' + wins + ' wins, ' + losses + ' losses (' + (wins+losses > 0 ? Math.round(wins/(wins+losses)*100) : '?') + '% win rate)\n' +
-          'Total fees paid: $' + totalFees.toFixed(2) + '\n\n' +
-          'RECENT ACTIVITY (last 30 entries):\n' + activitySample + '\n\n' +
-          'Search for current news relevant to any open or recent markets in this history.\n\n' +
-          'Provide a comprehensive trading analysis:\n' +
-          '1. Overall account health and performance assessment\n' +
-          '2. Trading patterns observed (categories, bet sizes, timing)\n' +
-          '3. Win/loss analysis — what\'s working and what\'s not\n' +
-          '4. Fee drag impact on returns\n' +
-          '5. Specific actionable recommendations to improve P&L\n' +
-          '6. Any current news relevant to open positions that should inform hold/sell decisions\n\n' +
-          'Be direct and specific. Use dollar amounts. This is for serious trading improvement.'
+          'You are a sharp trading coach reviewing a Kalshi prediction market account.\n\n' +
+          'ACCOUNT:\n' +
+          'Trades: ' + analyticsTradeRows.length + '\n' +
+          'Settlements: ' + wins.length + ' wins / ' + losses.length + ' losses (' +
+            (wins.length+losses.length > 0 ? Math.round(wins.length/(wins.length+losses.length)*100) : '?') + '% win rate)\n' +
+          'Realized profit: $' + realizedProfit.toFixed(2) + '\n' +
+          'Fees paid: $' + totalFees.toFixed(2) + '\n' +
+          'Net after fees: $' + (realizedProfit-totalFees).toFixed(2) + '\n\n' +
+          'TRADES:\n' + tradeSummary + '\n\n' +
+          'SETTLEMENTS:\n' + settleSummary + '\n\n' +
+          'Search for news on any tickers that may still be open.\n\n' +
+          'Give direct specific coaching:\n' +
+          '1. Performance assessment — sustainable?\n' +
+          '2. Which markets are working vs losing\n' +
+          '3. Trade sizing analysis\n' +
+          '4. Fee drag impact\n' +
+          '5. Specific actions to improve P&L\n' +
+          '6. Current news relevant to open positions\n\n' +
+          'Use real numbers, be direct.'
         }]
       })
     });
 
     var data = await resp.json();
     if (data.error) {
-      var msg = data.error.type === 'rate_limit_error' ? '⏱ Rate limit — wait 60s' : data.error.message.slice(0,120);
+      var msg = data.error.type === 'rate_limit_error' ? 'Rate limit — wait 60s.' : (data.error.message||'').slice(0,150);
       resultEl.innerHTML = '<div class="card" style="border-color:var(--red);color:var(--yellow);">' + msg + '</div>';
       btn.disabled = false; return;
     }
 
     var raw = (data.content||[]).map(function(b){ return b.type === 'text' ? b.text : ''; }).join('');
-
-    // Format the AI response nicely
     var formatted = raw
-      .replace(/^#{1,3}\s+(.+)$/gm, '<div style="font-family:var(--mono);font-size:0.78rem;font-weight:700;color:var(--blue);margin:14px 0 6px;text-transform:uppercase;letter-spacing:0.05em;">$1</div>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);">$1</strong>')
-      .replace(/\n\n/g, '<br><br>')
-      .replace(/\n/g, '<br>');
+      .replace(/^#{1,3}\s+(.+)$/gm, '<div style="font-family:var(--mono);font-size:0.75rem;font-weight:700;color:var(--blue);margin:14px 0 5px;text-transform:uppercase;">\$1</div>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);">\$1</strong>')
+      .replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>');
 
     resultEl.innerHTML = '<div class="card" style="border-color:var(--blue);">' +
-      '<div style="font-family:var(--mono);font-size:0.7rem;font-weight:700;color:var(--blue);margin-bottom:12px;">🤖 AI TRADING COACH ANALYSIS</div>' +
-      '<div style="font-size:0.82rem;line-height:1.7;color:var(--text);">' + formatted + '</div>' +
+      '<div style="font-family:var(--mono);font-size:0.7rem;font-weight:700;color:var(--blue);margin-bottom:12px;">\uD83E\uDD16 AI TRADING COACH</div>' +
+      '<div style="font-size:0.82rem;line-height:1.75;color:var(--text);">' + formatted + '</div>' +
     '</div>';
+    resultEl.scrollIntoView({behavior:'smooth',block:'start'});
 
   } catch(e) {
     resultEl.innerHTML = '<div class="card" style="border-color:var(--red);">Error: ' + e.message + '</div>';
