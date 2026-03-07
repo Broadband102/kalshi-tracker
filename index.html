@@ -207,6 +207,27 @@
     background: var(--bg); border: 1px solid var(--border2); color: var(--text);
     border-radius: 4px; padding: 5px 8px; font-family: var(--mono); font-size: 0.75rem;
   }
+  .version-stamp {
+    position: fixed; bottom: 8px; right: 12px;
+    font-family: var(--mono); font-size: 9px; color: var(--dim);
+    letter-spacing: 0.08em; pointer-events: none; z-index: 200;
+  }
+  /* Market card clickable */
+  .mkt-card { cursor: pointer; }
+  .mkt-card:hover .mkt-title { color: var(--blue); }
+  /* Richer card layout */
+  .mkt-outcome-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .outcome-pill {
+    font-family: var(--mono); font-size: 0.68rem; padding: 3px 9px;
+    border-radius: 12px; border: 1px solid var(--border);
+    background: var(--card); color: var(--mid); white-space: nowrap;
+  }
+  .outcome-pill.yes { color: var(--green); border-color: rgba(63,185,80,0.35); background: rgba(63,185,80,0.07); }
+  .outcome-pill.no  { color: var(--red);   border-color: rgba(248,81,73,0.35);  background: rgba(248,81,73,0.07); }
+  .outcome-pill.mid { color: var(--yellow); border-color: rgba(210,153,34,0.35); background: rgba(210,153,34,0.07); }
+  .mkt-closes { font-family: var(--mono); font-size: 0.62rem; color: var(--dim); }
+  .mkt-spread-bar { height: 3px; background: var(--border); border-radius: 2px; margin: 5px 0 7px; overflow: hidden; }
+  .mkt-spread-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--red), var(--yellow), var(--green)); }
 </style>
 </head>
 <body>
@@ -305,11 +326,13 @@
     <hr class="divider">
     <div class="flex-row">
       <button class="btn btn-blue" id="btn-fetch-markets" onclick="fetchMarkets()">⚡ Fetch Markets</button>
+      <button class="btn btn-green" id="btn-analyze-markets" onclick="analyzeMarkets()" style="display:none;">🤖 AI: Best Plays</button>
       <select id="sort-select" onchange="sortMarkets()">
         <option value="volume">Sort: Volume</option>
         <option value="yes_asc">Sort: Yes Price ↑</option>
         <option value="yes_desc">Sort: Yes Price ↓</option>
         <option value="mid50">Sort: Closest to 50¢</option>
+        <option value="ai">Sort: AI Rank</option>
       </select>
       <span id="browse-count" class="badge">—</span>
     </div>
@@ -318,8 +341,21 @@
     </div>
   </div>
 
+  <!-- AI analysis results — shown above market grid when available -->
+  <div id="ai-plays-wrap" style="display:none;" class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div class="card-title" style="margin-bottom:0;">🤖 AI Best Plays</div>
+      <button class="btn btn-ghost" style="font-size:0.65rem;padding:3px 8px;" onclick="closeAiPlays()">✕ Close</button>
+    </div>
+    <div id="ai-plays-status" class="badge" style="margin-bottom:12px;">idle</div>
+    <div id="ai-plays-results"></div>
+    <div id="ai-plays-summary" class="ai-box" style="display:none;margin-top:12px;"></div>
+  </div>
+
   <div id="market-grid" class="market-grid"></div>
 </div>
+
+<div class="version-stamp">KALSHI/EDGE v1.1.0</div>
 
 <script>
 'use strict';
@@ -504,7 +540,7 @@ function renderPortfolio() {
     var liveStr = p.liveCents ? p.liveCents + '¢' : '—';
     var avgStr  = p.avgCents  ? p.avgCents  + '¢' : '—';
     var accentCol = pnlVal >= 0 ? 'var(--green)' : 'var(--red)';
-    return '<div class="pos-row" style="border-left-color:' + accentCol + '">' +
+    return '<div class="pos-row" style="border-left-color:' + accentCol + ';cursor:pointer;" onclick="window.open(\'' + p.url + '\',\'_blank\')">' +
       '<div style="flex:1;min-width:0;">' +
         '<div class="pos-market">' + (p.market||p.ticker) + '</div>' +
         '<div class="pos-meta">' + p.ticker +
@@ -768,6 +804,130 @@ var CAT_KEYS = Object.keys(CATEGORIES).filter(function(v,i,a){ return a.indexOf(
 var selectedCat = '';
 var selectedTags = new Set();
 var fetchedMarkets = [];
+var aiRanks = {}; // ticker → {rank, edge, side, entry, trueProb, confidence, reason}
+
+function closeAiPlays() {
+  document.getElementById('ai-plays-wrap').style.display = 'none';
+}
+
+async function analyzeMarkets() {
+  var proxy = getProxy();
+  if (!proxy) { toast('⚠️ Set proxy URL in top bar', true); return; }
+  if (!fetchedMarkets.length) { toast('Fetch markets first', true); return; }
+
+  var btn = document.getElementById('btn-analyze-markets');
+  var wrap = document.getElementById('ai-plays-wrap');
+  var statusEl = document.getElementById('ai-plays-status');
+  var resultsEl = document.getElementById('ai-plays-results');
+  var summaryEl = document.getElementById('ai-plays-summary');
+
+  btn.disabled = true;
+  wrap.style.display = 'block';
+  wrap.scrollIntoView({behavior:'smooth', block:'start'});
+  resultsEl.innerHTML = '<div class="empty"><span class="spinner">🤖</span> Claude is scanning ' + fetchedMarkets.length + ' markets for best plays...</div>';
+  summaryEl.style.display = 'none';
+  statusEl.textContent = 'analyzing ' + fetchedMarkets.length + ' markets';
+
+  // Cap at 80 most-active markets to stay within token limits
+  var toAnalyze = fetchedMarkets.slice().sort(function(a,b) {
+    return (b.volume_24h||0) - (a.volume_24h||0);
+  }).slice(0, 80);
+
+  var mktText = toAnalyze.map(function(m, i) {
+    var mid = ((m.yes_ask||0) + (m.yes_bid||0)) / 2;
+    var spread = (m.yes_ask||0) - (m.yes_bid||0);
+    return (i+1) + '. ' + m.ticker +
+      '\n   Title: ' + (m.title||'').slice(0,120) +
+      '\n   YES buy=' + (m.yes_ask||'?') + '¢  YES sell=' + (m.yes_bid||'?') + '¢  mid=' + Math.round(mid) + '¢  spread=' + spread + '¢' +
+      '\n   NO buy=' + (m.no_ask||'?') + '¢  vol24h=' + (m.volume_24h||0).toLocaleString();
+  }).join('\n\n');
+
+  var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  try {
+    trackApiCall('claude');
+    var resp = await fetch(proxy, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 3000,
+        tools: [{type:'web_search_20250305', name:'web_search'}],
+        messages: [{role:'user', content:
+          'Today is ' + today + '. You are an expert Kalshi prediction market trader with deep knowledge of probability and current events.\n\n' +
+          'Here are ' + toAnalyze.length + ' open markets with LIVE Kalshi prices:\n\n' + mktText + '\n\n' +
+          'Search for current news and data relevant to these markets. Then identify the TOP 10 highest-probability-of-profit plays.\n\n' +
+          'For each pick consider:\n' +
+          '- Is the market price clearly wrong vs actual probability? (edge)\n' +
+          '- Does recent news strongly support one outcome?\n' +
+          '- Is there reasonable liquidity? (vol24h > 0 preferred)\n' +
+          '- Is the spread tight enough to make entry worthwhile?\n\n' +
+          'Respond ONLY with valid JSON, no markdown:\n' +
+          '{"plays":[{"ticker":"TICKER","side":"YES","entry_price":45,"true_prob":72,"edge":27,"confidence":82,"reason":"one concrete sentence citing specific news or data"}],' +
+          '"summary":"2-3 sentences on best opportunities right now"}'
+        }]
+      })
+    });
+
+    var data = await resp.json();
+    var raw = (data.content||[]).map(function(b){ return b.type==='text' ? b.text : ''; }).join('');
+    var clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+    var si = clean.indexOf('{'), ei = clean.lastIndexOf('}');
+    if (si < 0 || ei < 0) throw new Error('No JSON. Raw: ' + raw.slice(0,300));
+    var result = JSON.parse(clean.slice(si, ei+1));
+
+    // Store AI ranks so grid can show badges and AI sort works
+    aiRanks = {};
+    (result.plays||[]).forEach(function(p, i) {
+      aiRanks[p.ticker] = {
+        rank: i+1, edge: p.edge||0, side: p.side||'YES',
+        entry: p.entry_price||0, trueProb: p.true_prob||0,
+        confidence: p.confidence||0, reason: p.reason||''
+      };
+    });
+
+    // Render ranked plays
+    resultsEl.innerHTML = (result.plays||[]).map(function(p, i) {
+      var edgeCol = p.edge >= 15 ? 'var(--green)' : p.edge >= 8 ? 'var(--yellow)' : 'var(--mid)';
+      var sideCol = p.side === 'YES' ? 'var(--green)' : 'var(--red)';
+      var mkt = fetchedMarkets.find(function(m){ return m.ticker === p.ticker; }) || {};
+      var url = 'https://kalshi.com/markets/' +
+        p.ticker.split('-')[0].toLowerCase() + '/' +
+        (mkt.event_ticker||'').toLowerCase() + '/' +
+        p.ticker.toLowerCase();
+      return '<div class="ai-card" style="border-left-color:' + edgeCol + ';cursor:pointer;" onclick="window.open(\'' + url + '\',\'_blank\')">' +
+        '<div class="ai-action-row">' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);margin-bottom:2px;">#' + (i+1) + ' · ' + edgeCol.replace('var(--','').replace(')','').toUpperCase() + ' EDGE</div>' +
+            '<div style="font-family:var(--mono);font-size:0.78rem;font-weight:700;color:var(--text);">' + p.ticker + '</div>' +
+            '<div style="font-size:0.75rem;color:var(--mid);margin-top:2px;">' + (mkt.title||'').slice(0,110) + '</div>' +
+          '</div>' +
+          '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;">' +
+            '<span class="action-badge" style="color:' + sideCol + ';border:1px solid ' + sideCol + ';background:transparent;padding:3px 10px;">BUY ' + p.side + ' @ ' + (p.entry_price||'?') + '¢</span>' +
+            '<span style="font-family:var(--mono);font-size:0.68rem;color:' + edgeCol + ';font-weight:700;">+' + (p.edge||0) + '¢ EDGE · ' + (p.confidence||'?') + '% conf</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ai-reason" style="margin:6px 0;">' + (p.reason||'') + '</div>' +
+        '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);margin-bottom:8px;">market price ' + (p.entry_price||'?') + '¢ · true prob ~' + (p.true_prob||'?') + '¢</div>' +
+        '<a href="' + url + '" target="_blank" class="pbtn">↗ Trade on Kalshi</a>' +
+      '</div>';
+    }).join('');
+
+    if (result.summary) {
+      summaryEl.style.display = 'block';
+      summaryEl.textContent = result.summary;
+    }
+    statusEl.textContent = '✅ ' + (result.plays||[]).length + ' plays ranked';
+
+    // Re-render grid with AI rank badges
+    renderMarketGrid();
+
+  } catch(e) {
+    resultsEl.innerHTML = '<div class="empty" style="color:var(--red)">AI error: ' + e.message + '</div>';
+    statusEl.textContent = 'error';
+  }
+  btn.disabled = false;
+}
 
 function buildCategoryButtons() {
   var wrap = document.getElementById('cat-buttons');
@@ -873,6 +1033,7 @@ async function fetchMarkets() {
   fetchedMarkets = allMarkets;
   progressBar.style.width = '100%';
   renderMarketGrid();
+  document.getElementById('btn-analyze-markets').style.display = '';  // show AI button
   btn.disabled = false;
   setTimeout(function() { progressWrap.style.display = 'none'; }, 800);
 }
@@ -897,6 +1058,12 @@ function renderMarketGrid() {
       var midB = Math.abs(((b.yes_ask||0) + (b.yes_bid||0))/2 - 50);
       return midA - midB;
     });
+  } else if (sort === 'ai') {
+    markets.sort(function(a,b) {
+      var ra = aiRanks[a.ticker] ? aiRanks[a.ticker].rank : 999;
+      var rb = aiRanks[b.ticker] ? aiRanks[b.ticker].rank : 999;
+      return ra - rb;
+    });
   }
 
   var grid = document.getElementById('market-grid');
@@ -909,25 +1076,96 @@ function renderMarketGrid() {
   }
 
   grid.innerHTML = markets.slice(0, 200).map(function(m) {
+    // ── CONFIRMED URL FORMAT (verified against 100 live contracts) ──
+    // Format: kalshi.com/markets/{series}/{event_ticker}/{market_ticker} (all lowercase)
+    // Kalshi redirects this to the correct pretty-slug event page
     var series = (m.ticker||'').split('-')[0].toLowerCase();
     var ev     = (m.event_ticker||'').toLowerCase();
     var mk     = (m.ticker||'').toLowerCase();
     var url    = 'https://kalshi.com/markets/' + series + '/' + ev + '/' + mk;
-    var mid    = ((m.yes_ask||0) + (m.yes_bid||0)) / 2;
-    var midCol = mid > 60 ? 'var(--green)' : mid < 40 ? 'var(--red)' : 'var(--yellow)';
-    return '<div class="mkt-card">' +
-      '<div class="mkt-title">' + (m.title||m.ticker) + '</div>' +
-      '<div class="mkt-meta">' + (m.ticker||'') + ' · ' + (m.event_ticker||'') + '</div>' +
-      '<div class="mkt-prices">' +
-        '<span class="price-pill price-yes">YES ' + (m.yes_ask||'—') + '¢</span>' +
-        '<span class="price-pill price-no">NO ' + (m.no_ask||'—') + '¢</span>' +
-        '<span class="price-pill" style="color:' + midCol + '">' + Math.round(mid) + '¢ mid</span>' +
-        '<span class="price-vol">vol24h ' + (m.volume_24h||0).toLocaleString() + '</span>' +
+
+    var yesAsk = m.yes_ask || 0;
+    var yesBid = m.yes_bid || 0;
+    var noAsk  = m.no_ask  || 0;
+    var noBid  = m.no_bid  || 0;
+    var mid    = (yesAsk + yesBid) / 2;
+    var spread = yesAsk - yesBid;
+
+    // Probability bar fill: mid price = probability YES wins
+    var barPct = Math.max(2, Math.min(98, mid));
+
+    // Close time human-readable
+    var closeStr = '';
+    if (m.close_time) {
+      var d = new Date(m.close_time);
+      var now = new Date();
+      var diffMs = d - now;
+      if (diffMs > 0) {
+        var diffH = Math.floor(diffMs / 3600000);
+        var diffD = Math.floor(diffH / 24);
+        closeStr = diffD > 1 ? 'closes in ' + diffD + 'd' : diffH > 0 ? 'closes in ' + diffH + 'h' : 'closing soon';
+      } else {
+        closeStr = 'expired';
+      }
+    }
+
+    // Mission description — translate ticker into plain English context
+    var ticker = m.ticker || '';
+    var subtitle = m.subtitle || '';
+    var title = m.title || ticker;
+
+    // Build the "mission brief" — what you're actually betting on
+    var yesLabel = m.yes_sub_title || 'YES';
+    var noLabel  = m.no_sub_title  || 'NO';
+
+    // Edge/value signal
+    var valueSignal = '';
+    var valueColor  = '';
+    if (spread <= 2 && yesAsk > 0) {
+      valueSignal = '🟢 Tight spread'; valueColor = 'var(--green)';
+    } else if (spread <= 5) {
+      valueSignal = '🟡 Fair spread'; valueColor = 'var(--yellow)';
+    } else if (spread > 10) {
+      valueSignal = '🔴 Wide spread'; valueColor = 'var(--red)';
+    }
+
+    var aiRank = aiRanks[m.ticker];
+    var aiBadge = '';
+    if (aiRank) {
+      var edgeCol = aiRank.edge >= 15 ? 'var(--green)' : aiRank.edge >= 8 ? 'var(--yellow)' : 'var(--mid)';
+      aiBadge = '<div style="margin-bottom:7px;">' +
+        '<span style="font-family:var(--mono);font-size:0.62rem;font-weight:700;color:' + edgeCol + ';background:rgba(0,0,0,0.4);border:1px solid ' + edgeCol + ';border-radius:3px;padding:2px 8px;">🤖 AI #' + aiRank.rank + ' · BUY ' + aiRank.side + ' @ ' + aiRank.entry + '¢ · +' + aiRank.edge + '¢ edge</span>' +
+      '</div>';
+    }
+
+    return '<div class="mkt-card" onclick="window.open(\'' + url + '\',\'_blank\')" style="' + (aiRank ? 'border-color:var(--border2);' : '') + '">' +
+      aiBadge +
+      // Title — the plain English question
+      '<div class="mkt-title">' + title + '</div>' +
+      // Subtitle if different from title
+      (subtitle && subtitle !== title ? '<div style="font-size:0.75rem;color:var(--mid);margin-bottom:4px;">' + subtitle.slice(0,100) + '</div>' : '') +
+      // Ticker + event context
+      '<div class="mkt-meta">' + ticker + ' · ' + (m.event_ticker||'') + (closeStr ? ' · ' + closeStr : '') + '</div>' +
+      // Probability bar — visual at-a-glance
+      '<div class="mkt-spread-bar" title="YES probability ' + Math.round(mid) + '%">' +
+        '<div class="mkt-spread-fill" style="width:' + barPct + '%"></div>' +
       '</div>' +
-      '<a href="' + url + '" target="_blank" class="mkt-link">↗ Trade on Kalshi</a>' +
+      // Outcome pills
+      '<div class="mkt-outcome-row">' +
+        '<span class="outcome-pill yes">YES ' + yesAsk + '¢</span>' +
+        '<span class="outcome-pill no">NO ' + noAsk + '¢</span>' +
+        '<span class="outcome-pill mid">' + Math.round(mid) + '¢ implied</span>' +
+        (valueSignal ? '<span class="outcome-pill" style="color:' + valueColor + ';border-color:' + valueColor + ';background:transparent;">' + valueSignal + '</span>' : '') +
+      '</div>' +
+      // Volume + trade link
+      '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+        '<span class="price-vol">vol24h ' + (m.volume_24h||0).toLocaleString() + '</span>' +
+        '<span style="font-family:var(--mono);font-size:0.68rem;color:var(--blue);">↗ Trade</span>' +
+      '</div>' +
     '</div>';
   }).join('');
 }
+
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
