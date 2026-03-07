@@ -728,6 +728,11 @@ async function runAdvisor() {
 
     progressBar.style.width = '90%';
     var data = await resp.json();
+    if (data.error) {
+      var errMsg = data.error.type === 'rate_limit_error' ? '⏱ Rate limit — wait 60s and retry.' : '❌ ' + (data.error.message||'API error').slice(0,120);
+      resultsEl.innerHTML = '<div class="empty" style="color:var(--yellow);">' + errMsg + '</div>';
+      statusEl.textContent = data.error.type; btn.disabled = false; progressWrap.style.display = 'none'; return;
+    }
     var raw = (data.content||[]).map(function(b){ return b.type === 'text' ? b.text : ''; }).join('');
     var clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
     var si = clean.indexOf('{'), ei = clean.lastIndexOf('}');
@@ -842,19 +847,21 @@ async function analyzeMarkets() {
   summaryEl.style.display = 'none';
   statusEl.textContent = 'analyzing ' + fetchedMarkets.length + ' markets';
 
-  // Cap at 80 most-active markets to stay within token limits
+  // Cap at 40 markets (was 80) — keeps input well under 30k token/min rate limit
+  // Each market line ≈ 25 tokens; 40 markets ≈ 1,000 tokens of market data
   var toAnalyze = fetchedMarkets.slice().sort(function(a,b) {
     return (b.volume_24h||0) - (a.volume_24h||0);
-  }).slice(0, 80);
+  }).slice(0, 40);
 
+  // Compact format — strip to essentials only, ~25 tokens per market
   var mktText = toAnalyze.map(function(m, i) {
-    var mid = ((m.yes_ask||0) + (m.yes_bid||0)) / 2;
+    var mid = Math.round(((m.yes_ask||0) + (m.yes_bid||0)) / 2);
     var spread = (m.yes_ask||0) - (m.yes_bid||0);
-    return (i+1) + '. ' + m.ticker +
-      '\n   Title: ' + (m.title||'').slice(0,120) +
-      '\n   YES buy=' + (m.yes_ask||'?') + '¢  YES sell=' + (m.yes_bid||'?') + '¢  mid=' + Math.round(mid) + '¢  spread=' + spread + '¢' +
-      '\n   NO buy=' + (m.no_ask||'?') + '¢  vol24h=' + (m.volume_24h||0).toLocaleString();
-  }).join('\n\n');
+    // Truncate title hard at 80 chars
+    var title = (m.title||m.ticker).slice(0, 80);
+    return (i+1) + '. ' + m.ticker + ' | ' + title +
+      ' | YES=' + (m.yes_ask||'?') + '¢ NO=' + (m.no_ask||'?') + '¢ mid=' + mid + '¢ sprd=' + spread + '¢ vol=' + (m.volume_24h||0);
+  }).join('\n');
 
   var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
@@ -865,29 +872,37 @@ async function analyzeMarkets() {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 3000,
+        max_tokens: 2000,
         tools: [{type:'web_search_20250305', name:'web_search'}],
         messages: [{role:'user', content:
-          'Today is ' + today + '. You are an expert Kalshi prediction market trader with deep knowledge of probability and current events.\n\n' +
-          'Here are ' + toAnalyze.length + ' open markets with LIVE Kalshi prices:\n\n' + mktText + '\n\n' +
-          'Search for current news and data relevant to these markets. Then identify the TOP 10 highest-probability-of-profit plays.\n\n' +
-          'For each pick consider:\n' +
-          '- Is the market price clearly wrong vs actual probability? (edge)\n' +
-          '- Does recent news strongly support one outcome?\n' +
-          '- Is there reasonable liquidity? (vol24h > 0 preferred)\n' +
-          '- Is the spread tight enough to make entry worthwhile?\n\n' +
-          'Respond ONLY with valid JSON, no markdown:\n' +
-          '{"plays":[{"ticker":"TICKER","side":"YES","entry_price":45,"true_prob":72,"edge":27,"confidence":82,"reason":"one concrete sentence citing specific news or data"}],' +
-          '"summary":"2-3 sentences on best opportunities right now"}'
+          'Today: ' + today + '. Expert Kalshi trader.\n\n' +
+          'LIVE MARKETS (' + toAnalyze.length + '):\n' + mktText + '\n\n' +
+          'Search news for these markets. Pick TOP 5 best plays by edge (market price vs true probability).\n\n' +
+          'JSON only, no markdown:\n' +
+          '{"plays":[{"ticker":"X","side":"YES","entry_price":45,"true_prob":72,"edge":27,"confidence":82,"reason":"one sentence with evidence"}],"summary":"2 sentences max"}'
         }]
       })
     });
 
     var data = await resp.json();
+
+    // ── Handle API-level errors (rate limit, auth, etc.) ──────────────────
+    if (data.error) {
+      var errType = data.error.type || 'api_error';
+      var errMsg  = data.error.message || 'Unknown API error';
+      var friendly = errType === 'rate_limit_error'
+        ? '⏱ Rate limit hit — wait 60s and try again. (Kalshi sent ' + toAnalyze.length + ' markets; try a tighter subcategory filter to reduce data size.)'
+        : '❌ API error (' + errType + '): ' + errMsg.slice(0, 120);
+      resultsEl.innerHTML = '<div class="empty" style="color:var(--yellow);line-height:1.7;">' + friendly + '</div>';
+      statusEl.textContent = errType;
+      btn.disabled = false;
+      return;
+    }
+
     var raw = (data.content||[]).map(function(b){ return b.type==='text' ? b.text : ''; }).join('');
     var clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
     var si = clean.indexOf('{'), ei = clean.lastIndexOf('}');
-    if (si < 0 || ei < 0) throw new Error('No JSON. Raw: ' + raw.slice(0,300));
+    if (si < 0 || ei < 0) throw new Error('No JSON in response. Claude said: ' + raw.slice(0,200));
     var result = JSON.parse(clean.slice(si, ei+1));
 
     // Store AI ranks so grid can show badges and AI sort works
