@@ -433,11 +433,11 @@
       <button class="btn btn-blue" id="btn-fetch-markets" onclick="fetchMarkets()">⚡ Fetch Markets</button>
       <button class="btn btn-green" id="btn-analyze-markets" onclick="analyzeMarkets()" style="display:none;">🤖 AI: Best Plays</button>
       <!-- Today's Games toggle -->
-      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;" title="Show only games closing within the next 30 hours">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;" title="Show only straight head-to-head winner markets — hides spreads, totals, and props">
         <div id="today-toggle-track" onclick="toggleTodayFilter()" style="width:32px;height:18px;border-radius:9px;background:var(--border2);position:relative;transition:background 0.2s;flex-shrink:0;">
           <div id="today-toggle-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
         </div>
-        <span id="today-toggle-label" style="font-family:var(--mono);font-size:0.72rem;color:var(--mid);">TODAY'S GAMES</span>
+        <span id="today-toggle-label" style="font-family:var(--mono);font-size:0.72rem;color:var(--mid);">MATCHUPS ONLY</span>
       </label>
       <select id="sort-select" onchange="sortMarkets()">
         <option value="volume">Sort: Volume</option>
@@ -467,7 +467,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.4.2</div>
+<div class="version-stamp">KALSHI/EDGE v1.4.3</div>
 
 <script>
 'use strict';
@@ -1320,18 +1320,10 @@ function toggleTodayFilter() {
   var track = document.getElementById('today-toggle-track');
   var thumb = document.getElementById('today-toggle-thumb');
   var label = document.getElementById('today-toggle-label');
-  if (track) track.style.background = todayFilterOn ? 'var(--blue)' : 'var(--border2)';
+  if (track) track.style.background = todayFilterOn ? 'var(--green)' : 'var(--border2)';
   if (thumb) thumb.style.left = todayFilterOn ? '16px' : '2px';
-  if (label) label.style.color = todayFilterOn ? 'var(--blue)' : 'var(--mid)';
+  if (label) label.style.color = todayFilterOn ? 'var(--green)' : 'var(--mid)';
   renderMarketGrid();
-}
-
-function isTodaysGame(closeTime) {
-  if (!closeTime) return true; // no date → show it
-  var close = new Date(closeTime);
-  var now = new Date();
-  var diffH = (close - now) / 3600000;
-  return diffH >= -3 && diffH <= 30; // closes within next 30h (or just closed)
 }
 
 function sortMarkets() {
@@ -1518,10 +1510,9 @@ function renderMarketGrid() {
   var matchGroups = grouped.matchGroups;
   var singles     = grouped.singles;
 
-  // ── Today's Games filter ────────────────────────────────────────────────
+  // ── Matchups Only filter ────────────────────────────────────────────────
   if (todayFilterOn) {
-    matchGroups = matchGroups.filter(function(mg) { return isTodaysGame(mg.close_time); });
-    singles     = singles.filter(function(m)  { return isTodaysGame(m.close_time); });
+    singles = []; // hide all props, spreads, totals — matchups only
   }
 
   if (sort === 'volume') {
