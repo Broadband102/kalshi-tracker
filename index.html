@@ -355,7 +355,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.3.0</div>
+<div class="version-stamp">KALSHI/EDGE v1.3.1</div>
 
 <script>
 'use strict';
@@ -372,6 +372,39 @@ var H = {'Accept':'application/json','User-Agent':'Mozilla/5.0'};
 // Cache: seriesTicker → slug (populated from series API data during fetchMarkets)
 var seriesSlugCache = {};
 
+// Prefetch slugs for unique series tickers in portfolio positions
+// Called after CSV import — silently fetches series titles → slug for each unique series
+async function prefetchPortfolioSlugs(positions) {
+  var proxy = getProxy();
+  if (!proxy) return;
+  // Get unique series tickers from positions
+  var seen = {};
+  (positions || []).forEach(function(p) {
+    var st = (p.ticker||'').split('-')[0].toUpperCase();
+    if (st && !seriesSlugCache[st]) seen[st] = true;
+  });
+  var seriesList = Object.keys(seen);
+  if (!seriesList.length) return;
+
+  // Fetch each series individually (or batch via /series?limit=200)
+  // Use single batch call for efficiency
+  try {
+    // Can't filter by ticker list, so fetch all series for relevant categories
+    // Instead fetch each unique series ticker directly
+    await Promise.all(seriesList.map(async function(st) {
+      try {
+        var r = await fetch(proxy + '/kalshi-proxy?path=' + encodeURIComponent('/series/' + st));
+        var d = await r.json();
+        if (d.series && d.series.title) {
+          seriesSlugCache[st] = slugify(d.series.title);
+          // Re-render portfolio with correct URLs now that we have slugs
+          renderPortfolio();
+        }
+      } catch(e) {}
+    }));
+  } catch(e) {}
+}
+
 function slugify(title) {
   return (title||'').toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')   // strip special chars
@@ -381,20 +414,38 @@ function slugify(title) {
 }
 
 function kalshiUrl(ticker, eventTicker, seriesTicker) {
-  var series = (seriesTicker || ticker.split('-')[0]).toLowerCase();
-  var slug   = seriesSlugCache[series.toUpperCase()] || (eventTicker || ticker).toLowerCase();
-  var ev     = (eventTicker || ticker).toLowerCase();
-  var mk     = ticker.toLowerCase();
-  return 'https://kalshi.com/markets/' + series + '/' + slug + '/' + ev;
+  // Derive series ticker from market ticker (always the first segment)
+  var st = (seriesTicker || ticker.split('-')[0]).toUpperCase();
+  var series = st.toLowerCase();
+
+  // Derive event_ticker: for KXFED-26JUN-T3.50 → KXFED-26JUN
+  // Rule: event_ticker = everything up to the last '-' segment IF that segment
+  // looks like a strike value (starts with T, B, or contains a dot/digit-only)
+  // Otherwise event_ticker = ticker itself (2-segment tickers like KXFED-26JUN)
+  var ev = eventTicker || ticker;
+  if (!eventTicker) {
+    var parts = ticker.split('-');
+    if (parts.length >= 3) {
+      var lastPart = parts[parts.length - 1];
+      // Strike segment patterns: T3.50, B79375, T4.5, YES, NO, HOME, TIE, etc.
+      var isStrike = /^[TtBb]\d|^\d|^[A-Z]{2,4}$/.test(lastPart);
+      if (isStrike) {
+        ev = parts.slice(0, parts.length - 1).join('-');
+      }
+    }
+  }
+
+  // Slug: use cache if available, otherwise slugify series title from cache key
+  // For portfolio where cache may be empty, fetch will populate it later
+  var slug = seriesSlugCache[st] || ev.toLowerCase();
+
+  return 'https://kalshi.com/markets/' + series + '/' + slug + '/' + ev.toLowerCase();
 }
 
 // Individual outcome URL — links directly to a specific market contract
 function kalshiContractUrl(ticker, eventTicker, seriesTicker) {
-  var series = (seriesTicker || ticker.split('-')[0]).toLowerCase();
-  var slug   = seriesSlugCache[series.toUpperCase()] || (eventTicker || ticker).toLowerCase();
-  var ev     = (eventTicker || ticker).toLowerCase();
-  var mk     = ticker.toLowerCase();
-  return 'https://kalshi.com/markets/' + series + '/' + slug + '/' + ev + '?market=' + mk;
+  var base = kalshiUrl(ticker, eventTicker, seriesTicker);
+  return base + '?market=' + ticker.toLowerCase();
 }
 
 // ── API COST TRACKING ─────────────────────────────────────────────────────────
@@ -532,7 +583,7 @@ function importPortfolio(event) {
           pnl:       parseDollars(col(vals,'positionreturns')),
           liveCents: parseCents(col(vals,'yesprice')),
           closeDate: col(vals,'closedate'),
-          url:       kalshiUrl(ticker, eventTicker)
+          url:       kalshiUrl(ticker, eventTicker, ticker.split('-')[0])
         });
       }
 
@@ -541,6 +592,10 @@ function importPortfolio(event) {
       save(); renderPortfolio(); showTab('portfolio');
       var total = positions.reduce(function(a,p){ return a + p.invested; }, 0);
       toast('✅ ' + positions.length + ' positions · $' + total.toFixed(2) + ' invested');
+
+      // Background: prefetch series slugs for all unique series in portfolio
+      // This fixes URLs so links open the correct event page, not the latest one
+      prefetchPortfolioSlugs(positions);
 
     } catch(err) {
       toast('❌ Import failed: ' + err.message, true);
