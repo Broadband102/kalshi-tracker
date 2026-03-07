@@ -236,8 +236,8 @@
   <div class="topbar-logo">KALSHI<span>/EDGE</span></div>
   <input class="proxy-input" id="proxy-url" placeholder="Proxy URL — e.g. https://kalshi-proxy.workers.dev" oninput="saveProxy()">
   <div class="cost-badge">
-    <span>API CALLS <b id="api-count">0</b></span>
-    <span>EST. COST <b id="api-cost">$0.0000</b></span>
+    <span>CALLS <b id="api-count">0 Kalshi · 0 Claude</b></span>
+    <span>CLAUDE COST <b id="api-cost">$0.000</b></span>
   </div>
 </div>
 
@@ -372,15 +372,29 @@ function kalshiUrl(ticker, eventTicker) {
   return 'https://kalshi.com/markets/' + series + '/' + ev + '/' + mk;
 }
 
-// ── API COST TRACKING ────────────────────────────────────────────────────────
-var apiCalls = 0, apiCostCents = 0;
-// Rough cost: Kalshi API calls are free; Claude API cost:
-//   ~$3/M input tokens, ~$15/M output tokens → ~$0.003 per 1K tokens avg
-function trackApiCall(type) {
+// ── API COST TRACKING ─────────────────────────────────────────────────────────
+// Kalshi API:  FREE (public endpoints, no auth required)
+// Claude API:  claude-sonnet-4: $3/M input tokens, $15/M output tokens
+//   runAdvisor:      ~2,000 input tokens  + ~1,500 output = ~$0.028 per call
+//   analyzeMarkets:  ~5,000 input tokens  + ~2,000 output = ~$0.045 per call
+//   (input includes system context + all market/position data sent)
+var apiCalls = 0;
+var kalshiCalls = 0;
+var claudeCostCents = 0;  // in cents
+
+function trackApiCall(type, subtype) {
   apiCalls++;
-  if (type === 'claude') apiCostCents += 0.5; // ~$0.005 per Claude call
-  document.getElementById('api-count').textContent = apiCalls;
-  document.getElementById('api-cost').textContent = '$' + (apiCostCents / 100).toFixed(4);
+  if (type === 'kalshi') {
+    kalshiCalls++;
+  } else if (type === 'claude') {
+    // Estimate tokens based on what was sent
+    var costCents = subtype === 'analyze'
+      ? 4.5   // analyzeMarkets: ~80 markets × ~40 tokens each + overhead
+      : 2.8;  // runAdvisor: positions data, smaller payload
+    claudeCostCents += costCents;
+  }
+  document.getElementById('api-count').textContent = kalshiCalls + ' Kalshi · ' + (claudeCostCents > 0 ? (claudeCostCents/100).toFixed(3) + ' Claude' : '0 Claude');
+  document.getElementById('api-cost').textContent = claudeCostCents > 0 ? '~$' + (claudeCostCents / 100).toFixed(3) : '$0.000';
 }
 
 // ── STATE ────────────────────────────────────────────────────────────────────
@@ -845,7 +859,7 @@ async function analyzeMarkets() {
   var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
   try {
-    trackApiCall('claude');
+    trackApiCall('claude', 'analyze');
     var resp = await fetch(proxy, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
