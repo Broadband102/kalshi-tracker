@@ -467,7 +467,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.4.6</div>
+<div class="version-stamp">KALSHI/EDGE v1.4.7</div>
 
 <script>
 'use strict';
@@ -1066,9 +1066,9 @@ async function analyzeMarkets() {
   if (!proxy) { toast('⚠️ Set proxy URL in top bar', true); return; }
   if (!fetchedMarkets.length) { toast('Fetch markets first', true); return; }
 
-  var btn = document.getElementById('btn-analyze-markets');
-  var wrap = document.getElementById('ai-plays-wrap');
-  var statusEl = document.getElementById('ai-plays-status');
+  var btn       = document.getElementById('btn-analyze-markets');
+  var wrap      = document.getElementById('ai-plays-wrap');
+  var statusEl  = document.getElementById('ai-plays-status');
   var resultsEl = document.getElementById('ai-plays-results');
   var summaryEl = document.getElementById('ai-plays-summary');
 
@@ -1077,72 +1077,109 @@ async function analyzeMarkets() {
   wrap.scrollIntoView({behavior:'smooth', block:'start'});
   summaryEl.style.display = 'none';
 
-  // Group everything first
-  var grouped = groupMatchEvents(fetchedMarkets);
-  var matchGroups = grouped.matchGroups;
-  var singles = grouped.singles;
-
-  // If today filter is on, apply same filter so AI matches what's displayed
+  var grouped       = groupMatchEvents(fetchedMarkets);
+  var matchGroups   = grouped.matchGroups;
+  var singles       = grouped.singles;
   var analyzeGroups = todayFilterOn
     ? matchGroups.filter(function(mg){ return isToday(mg.event_ticker); })
     : matchGroups;
 
-  var total = analyzeGroups.length + singles.length;
-  var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  var today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
-  // ── Build batches of 30 matches per API call ──────────────────────────────
-  // Each batch: up to 30 match groups (each counts as 1 entry regardless of 2 or 3 sides)
-  // Singles are sorted by volume and distributed across batches, up to 10 per batch
-  var MATCH_BATCH = 30;
+  var MATCH_BATCH       = 30;
   var SINGLES_PER_BATCH = 10;
-  var singlesRanked = singles.slice().sort(function(a,b){ return (b.volume_24h||0)-(a.volume_24h||0); });
+  var RATE_LIMIT_WAIT   = 120;
+  var MAX_RETRIES       = 3;
 
+  var singlesRanked = singles.slice().sort(function(a,b){ return (b.volume_24h||0)-(a.volume_24h||0); });
   var batches = [];
   for (var bi = 0; bi < analyzeGroups.length || (bi === 0 && singlesRanked.length); bi += MATCH_BATCH) {
-    var batchMatches = analyzeGroups.slice(bi, bi + MATCH_BATCH);
-    // Include top singles in every batch so they can compete for picks
-    var batchSingles = singlesRanked.slice(0, SINGLES_PER_BATCH);
-    batches.push({ matches: batchMatches, singles: batchSingles });
+    batches.push({
+      matches: analyzeGroups.slice(bi, bi + MATCH_BATCH),
+      singles: singlesRanked.slice(0, SINGLES_PER_BATCH)
+    });
   }
-  // Edge case: no matches but have singles
   if (!batches.length && singlesRanked.length) {
     batches.push({ matches: [], singles: singlesRanked.slice(0, 40) });
   }
 
   var totalBatches = batches.length;
-  resultsEl.innerHTML = '<div class="empty"><span class="spinner">🤖</span> Scanning ' + analyzeGroups.length + ' matchups in ' + totalBatches + ' batch' + (totalBatches > 1 ? 'es' : '') + '...</div>';
-  statusEl.textContent = 'batch 1/' + totalBatches;
 
-  function buildBatchText(batch, batchNum) {
+  // Upfront ETA: ~25s per batch + 8s cooldown between
+  var estSecs = totalBatches * 25 + Math.max(0, totalBatches - 1) * 8;
+  var etaStr  = estSecs < 60 ? '~' + estSecs + 's' : '~' + Math.ceil(estSecs/60) + ' min';
+
+  // ── Progress shell: batch dots + status message, persists through countdown ──
+  function progressHTML(batchIdx, innerHTML, bankedCount) {
+    var dots = '';
+    for (var d = 0; d < totalBatches; d++) {
+      var col = d < batchIdx ? 'var(--green)' : d === batchIdx ? 'var(--yellow)' : 'var(--dim)';
+      dots += '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+col+';margin:0 2px;"></span>';
+    }
+    var bankedLine = bankedCount > 0
+      ? '<div style="font-size:0.7rem;color:var(--green);margin-top:6px;">✅ '+bankedCount+' play'+(bankedCount>1?'s':'')+' banked</div>'
+      : '<div style="font-size:0.7rem;color:var(--dim);margin-top:6px;">Best 5 picks revealed at the end</div>';
+    return '<div style="text-align:center;padding:18px 12px;">'+
+      '<div style="margin-bottom:10px;">'+dots+'</div>'+
+      innerHTML + bankedLine +
+    '</div>';
+  }
+
+  // Show initial ETA
+  resultsEl.innerHTML = progressHTML(0,
+    '<div style="font-family:var(--mono);font-size:0.85rem;font-weight:700;color:var(--yellow);">🤖 Scanning '+analyzeGroups.length+' matchups</div>'+
+    '<div style="font-size:0.72rem;color:var(--mid);margin-top:3px;">'+totalBatches+' batch'+(totalBatches>1?'es':'')+' · est. '+etaStr+'</div>'
+  , 0);
+
+  // ── Non-destructive countdown — updates shell, never wipes plays ──────────
+  var currentBatchIdx = 0;
+  var bankedSoFar = 0;
+
+  async function countdown(secs, label) {
+    for (var s = secs; s > 0; s--) {
+      var m = Math.floor(s/60), sec = s%60;
+      var t = m > 0 ? m+':'+(sec<10?'0':'')+sec : sec+'s';
+      statusEl.textContent = label+' · '+t;
+      resultsEl.innerHTML = progressHTML(currentBatchIdx,
+        '<div style="font-size:1.4rem;margin-bottom:2px;">⏱</div>'+
+        '<div style="font-family:var(--mono);font-size:1.1rem;font-weight:700;color:var(--yellow);">'+t+'</div>'+
+        '<div style="font-size:0.72rem;color:var(--mid);margin-top:3px;">'+label+'</div>'
+      , bankedSoFar);
+      await new Promise(function(r){ setTimeout(r, 1000); });
+    }
+  }
+
+  // ── Build batch prompt text ───────────────────────────────────────────────
+  function batchText(batch, batchNum) {
     var lines = [];
     batch.matches.forEach(function(mg, i) {
-      var home = mg.home || {}; var away = mg.away || {}; var tie = mg.tie || {};
-      var gameDate = parseDateFromTicker(mg.event_ticker);
-      var dateStr = gameDate ? gameDate.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
-      var todayTag = isToday(mg.event_ticker) ? ' [TODAY]' : '';
-      lines.push((i+1) + '. MATCH ' + mg.seriesTicker + todayTag + (dateStr?' '+dateStr:'') +
-        ': ' + (home.yes_sub_title||'?') + ' vs ' + (away.yes_sub_title||'?') +
-        ' | ' + mg.event_ticker +
-        ' | Home=' + (home.yes_ask||'?') + '¢' +
-        (tie.yes_ask ? ' Draw=' + tie.yes_ask + '¢' : '') +
-        ' Away=' + (away.yes_ask||'?') + '¢' +
-        ' | vol=' + mg.totalVol);
+      var home = mg.home||{}, away = mg.away||{}, tie = mg.tie||{};
+      var gd = parseDateFromTicker(mg.event_ticker);
+      var ds = gd ? gd.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+      var tag = isToday(mg.event_ticker) ? ' [TODAY]' : '';
+      lines.push((i+1)+'. MATCH '+mg.seriesTicker+tag+(ds?' '+ds:'')+
+        ': '+(home.yes_sub_title||'?')+' vs '+(away.yes_sub_title||'?')+
+        ' | '+mg.event_ticker+
+        ' | Home='+(home.yes_ask||'?')+'¢'+
+        (tie.yes_ask ? ' Draw='+tie.yes_ask+'¢' : '')+
+        ' Away='+(away.yes_ask||'?')+'¢'+
+        ' | vol='+mg.totalVol);
     });
     if (batch.singles.length) {
       lines.push('\nOTHER MARKETS:');
       batch.singles.forEach(function(m, i) {
         var mid = Math.round(((m.yes_ask||0)+(m.yes_bid||0))/2);
-        lines.push((batch.matches.length+i+1) + '. ' + m.ticker +
-          ' | ' + (m.title||'').slice(0,70) +
-          ' | YES=' + (m.yes_ask||'?') + '¢ mid=' + mid + '¢ vol=' + (m.volume_24h||0));
+        lines.push((batch.matches.length+i+1)+'. '+m.ticker+
+          ' | '+(m.title||'').slice(0,70)+
+          ' | YES='+(m.yes_ask||'?')+'¢ mid='+mid+'¢ vol='+(m.volume_24h||0));
       });
     }
     return lines.join('\n');
   }
 
+  // ── Single batch API call ─────────────────────────────────────────────────
   async function runBatch(batch, batchNum) {
-    var mktText = buildBatchText(batch, batchNum);
-    var batchSize = batch.matches.length + batch.singles.length;
+    var sz = batch.matches.length + batch.singles.length;
     var resp = await fetch(proxy, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -1151,14 +1188,14 @@ async function analyzeMarkets() {
         max_tokens: 2000,
         tools: [{type:'web_search_20250305', name:'web_search'}],
         messages: [{role:'user', content:
-          'Today: ' + today + '. Expert Kalshi sports prediction market trader.\n' +
-          'Batch ' + batchNum + '/' + totalBatches + ' — ' + batchSize + ' markets:\n\n' +
-          mktText + '\n\n' +
-          'MATCH entries: prices are cents (50¢=50% prob). TODAY games are live/imminent — prioritize.\n' +
-          'Search for relevant news. Pick TOP 5 best value plays from THIS batch.\n' +
-          'For matches specify side: HOME, DRAW, or AWAY.\n\n' +
-          'JSON only, no markdown:\n' +
-          '{"plays":[{"ticker":"MARKET-TICKER-SIDE","side":"HOME","entry_price":45,"true_prob":58,"edge":13,"confidence":80,"reason":"one sentence with evidence"}],"summary":"1 sentence"}'
+          'Today: '+today+'. Expert Kalshi sports prediction market trader.\n'+
+          'Batch '+batchNum+'/'+totalBatches+' — '+sz+' markets:\n\n'+
+          batchText(batch, batchNum)+'\n\n'+
+          'Prices in cents (50¢=50% prob). TODAY = live/imminent, prioritize.\n'+
+          'Search for news. Pick TOP 5 best value plays from THIS batch.\n'+
+          'For matches specify side: HOME, DRAW, or AWAY.\n\n'+
+          'JSON only, no markdown:\n'+
+          '{"plays":[{"ticker":"KXEXAMPLE-26MAR07TEAMB-TEAMB","side":"HOME","entry_price":45,"true_prob":58,"edge":13,"confidence":80,"reason":"one sentence with evidence"}],"summary":"1 sentence"}'
         }]
       })
     });
@@ -1166,102 +1203,101 @@ async function analyzeMarkets() {
     return resp.json();
   }
 
-  // Run all batches, collect all plays, re-rank top 10 overall
+  // ── Main async loop ───────────────────────────────────────────────────────
   (async function() {
     var allPlays = [];
     var batchSummaries = [];
 
     for (var i = 0; i < batches.length; i++) {
-      statusEl.textContent = 'batch ' + (i+1) + '/' + totalBatches + ' running...';
-      resultsEl.innerHTML = '<div class="empty"><span class="spinner">🤖</span> Batch ' + (i+1) + '/' + totalBatches + ': scanning ' + (batches[i].matches.length) + ' matchups...</div>';
+      currentBatchIdx = i;
+      bankedSoFar = allPlays.length;
+      var label = 'Batch '+(i+1)+'/'+totalBatches;
+      statusEl.textContent = label+' running…';
+      resultsEl.innerHTML = progressHTML(i,
+        '<div style="font-family:var(--mono);font-size:0.8rem;font-weight:700;color:var(--text);">'+label+' <span class="spinner">🤖</span></div>'+
+        '<div style="font-size:0.72rem;color:var(--mid);margin-top:3px;">Scanning '+batches[i].matches.length+' matchups…</div>'
+      , bankedSoFar);
 
-      try {
-        var data = await runBatch(batches[i], i+1);
+      var attempts = 0, success = false;
+      while (attempts < MAX_RETRIES && !success) {
+        attempts++;
+        try {
+          var data = await runBatch(batches[i], i+1);
 
-        if (data.error) {
-          var errMsg = data.error.type === 'rate_limit_error'
-            ? '⏱ Rate limit — wait 60s and retry'
-            : '❌ ' + (data.error.message||'').slice(0,100);
-          resultsEl.innerHTML = '<div class="empty" style="color:var(--yellow);">' + errMsg + '</div>';
-          statusEl.textContent = 'error batch ' + (i+1);
-          btn.disabled = false;
-          return;
+          if (data.error && data.error.type === 'rate_limit_error') {
+            var ws = RATE_LIMIT_WAIT;
+            var rm = (data.error.message||'').match(/try again in (\d+)/i);
+            if (rm) ws = Math.min(180, parseInt(rm[1]) + 5);
+            await countdown(ws, label+' · rate limit, auto-retrying');
+            continue;
+          }
+          if (data.error) { console.warn('Batch '+(i+1)+' err:', data.error.type); success = true; break; }
+
+          var raw   = (data.content||[]).map(function(b){ return b.type==='text'?b.text:''; }).join('');
+          var clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+          var si = clean.indexOf('{'), ei = clean.lastIndexOf('}');
+          if (si >= 0 && ei >= 0) {
+            var res = JSON.parse(clean.slice(si, ei+1));
+            (res.plays||[]).forEach(function(p){ allPlays.push(p); });
+            if (res.summary) batchSummaries.push(res.summary);
+          }
+          success = true;
+        } catch(e) {
+          console.warn('Batch '+(i+1)+' attempt '+attempts+' threw:', e.message);
+          if (attempts < MAX_RETRIES) await countdown(30, label+' · retrying…');
         }
-
-        var raw = (data.content||[]).map(function(b){ return b.type==='text' ? b.text : ''; }).join('');
-        var clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-        var si = clean.indexOf('{'), ei = clean.lastIndexOf('}');
-        if (si >= 0 && ei >= 0) {
-          var result = JSON.parse(clean.slice(si, ei+1));
-          (result.plays||[]).forEach(function(p){ allPlays.push(p); });
-          if (result.summary) batchSummaries.push(result.summary);
-        }
-      } catch(e) {
-        console.warn('Batch ' + (i+1) + ' error:', e.message);
       }
 
-      // Small delay between batches to avoid rate limits
-      if (i < batches.length - 1) {
-        statusEl.textContent = 'batch ' + (i+1) + ' done · cooling down...';
-        await new Promise(function(res){ setTimeout(res, 1500); });
-      }
+      bankedSoFar = allPlays.length;
+      if (i < batches.length - 1) await countdown(8, label+' ✅ · cooling down');
     }
 
-    // ── Final ranking: sort all plays by edge desc, dedup tickers, keep top 10 ──
-    allPlays.sort(function(a,b){ return (b.edge||0) - (a.edge||0); });
-    var seen = {};
-    var topPlays = allPlays.filter(function(p){
-      var key = p.ticker;
-      if (seen[key]) return false;
-      seen[key] = true;
-      return true;
-    }).slice(0, 10);
+    // ── Final top-5 ──────────────────────────────────────────────────────────
+    allPlays.sort(function(a,b){ return (b.edge||0)-(a.edge||0); });
+    var seen = {}, topPlays = allPlays.filter(function(p){
+      if (seen[p.ticker]) return false; seen[p.ticker]=true; return true;
+    }).slice(0,5);
 
-    // Store AI ranks
     aiRanks = {};
-    topPlays.forEach(function(p, i) {
-      aiRanks[p.ticker] = {
-        rank: i+1, edge: p.edge||0, side: p.side||'YES',
-        entry: p.entry_price||0, trueProb: p.true_prob||0,
-        confidence: p.confidence||0, reason: p.reason||''
-      };
+    topPlays.forEach(function(p,i){
+      aiRanks[p.ticker] = { rank:i+1, edge:p.edge||0, side:p.side||'YES',
+        entry:p.entry_price||0, trueProb:p.true_prob||0,
+        confidence:p.confidence||0, reason:p.reason||'' };
     });
 
-    // Render
-    resultsEl.innerHTML = topPlays.map(function(p, i) {
-      var edgeCol = p.edge >= 15 ? 'var(--green)' : p.edge >= 8 ? 'var(--yellow)' : 'var(--mid)';
-      var sideCol = p.side === 'HOME' || p.side === 'YES' ? 'var(--green)' : p.side === 'DRAW' ? 'var(--yellow)' : 'var(--red)';
-      var mkt = fetchedMarkets.find(function(m){ return m.ticker === p.ticker; }) || {};
-      var seriesTicker = p.ticker.split('-')[0];
-      var url = kalshiUrl(p.ticker, mkt.event_ticker || p.ticker, seriesTicker);
-      return '<div class="ai-card" style="border-left-color:' + edgeCol + ';cursor:pointer;" onclick="window.open(\'' + url + '\',\'_blank\')">' +
-        '<div class="ai-action-row">' +
-          '<div style="flex:1;min-width:0;">' +
-            '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);margin-bottom:2px;">#' + (i+1) + ' · ' + edgeCol.replace('var(--','').replace(')','').toUpperCase() + ' EDGE</div>' +
-            '<div style="font-family:var(--mono);font-size:0.78rem;font-weight:700;color:var(--text);">' + p.ticker + '</div>' +
-            '<div style="font-size:0.75rem;color:var(--mid);margin-top:2px;">' + (mkt.title||p.ticker).slice(0,110) + '</div>' +
-          '</div>' +
-          '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;">' +
-            '<span class="action-badge" style="color:' + sideCol + ';border:1px solid ' + sideCol + ';background:transparent;padding:3px 10px;">BUY ' + p.side + ' @ ' + (p.entry_price||'?') + '¢</span>' +
-            '<span style="font-family:var(--mono);font-size:0.68rem;color:' + edgeCol + ';font-weight:700;">+' + (p.edge||0) + '¢ EDGE · ' + (p.confidence||'?') + '% conf</span>' +
-          '</div>' +
-        '</div>' +
-        '<div class="ai-reason" style="margin:6px 0;">' + (p.reason||'') + '</div>' +
-        '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);margin-bottom:8px;">market price ' + (p.entry_price||'?') + '¢ · true prob ~' + (p.true_prob||'?') + '¢</div>' +
-        '<a href="' + url + '" target="_blank" class="pbtn">↗ Trade on Kalshi</a>' +
+    resultsEl.innerHTML = topPlays.map(function(p,i){
+      var ec = p.edge>=15?'var(--green)':p.edge>=8?'var(--yellow)':'var(--mid)';
+      var sc2 = (p.side==='HOME'||p.side==='YES')?'var(--green)':p.side==='DRAW'?'var(--yellow)':'var(--red)';
+      var mkt = fetchedMarkets.find(function(m){ return m.ticker===p.ticker; })||{};
+      var url = kalshiUrl(p.ticker, mkt.event_ticker||p.ticker, p.ticker.split('-')[0]);
+      return '<div class="ai-card" style="border-left-color:'+ec+';cursor:pointer;" onclick="window.open(\''+url+'\',\'_blank\')">'+
+        '<div class="ai-action-row">'+
+          '<div style="flex:1;min-width:0;">'+
+            '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);margin-bottom:2px;">#'+(i+1)+' · '+ec.replace('var(--','').replace(')','').toUpperCase()+' EDGE</div>'+
+            '<div style="font-family:var(--mono);font-size:0.78rem;font-weight:700;color:var(--text);">'+p.ticker+'</div>'+
+            '<div style="font-size:0.75rem;color:var(--mid);margin-top:2px;">'+(mkt.title||p.ticker).slice(0,110)+'</div>'+
+          '</div>'+
+          '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;">'+
+            '<span class="action-badge" style="color:'+sc2+';border:1px solid '+sc2+';background:transparent;padding:3px 10px;">BUY '+p.side+' @ '+(p.entry_price||'?')+'¢</span>'+
+            '<span style="font-family:var(--mono);font-size:0.68rem;color:'+ec+';font-weight:700;">+'+(p.edge||0)+'¢ EDGE · '+(p.confidence||'?')+'% conf</span>'+
+          '</div>'+
+        '</div>'+
+        '<div class="ai-reason" style="margin:6px 0;">'+(p.reason||'')+'</div>'+
+        '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);margin-bottom:8px;">market price '+(p.entry_price||'?')+'¢ · true prob ~'+(p.true_prob||'?')+'¢</div>'+
+        '<a href="'+url+'" target="_blank" class="pbtn">↗ Trade on Kalshi</a>'+
       '</div>';
-    }).join('') || '<div class="empty">No strong plays found across ' + totalBatches + ' batches</div>';
+    }).join('') || '<div class="empty">No strong plays found across '+totalBatches+' batches</div>';
 
     if (batchSummaries.length) {
       summaryEl.style.display = 'block';
-      summaryEl.textContent = topPlays.length + ' best plays from ' + analyzeGroups.length + ' matchups across ' + totalBatches + ' batch' + (totalBatches>1?'es':'') + '. ' + batchSummaries[0];
+      summaryEl.textContent = 'Top 5 from '+allPlays.length+' plays · '+analyzeGroups.length+' matchups · '+totalBatches+' batch'+(totalBatches>1?'es':'')+' scanned. '+batchSummaries[0];
     }
-    statusEl.textContent = '✅ ' + topPlays.length + ' plays from ' + analyzeGroups.length + ' matchups (' + totalBatches + ' batches)';
-
+    statusEl.textContent = '✅ Top 5 · '+analyzeGroups.length+' matchups · '+totalBatches+' batch'+(totalBatches>1?'es':'');
     renderMarketGrid();
     btn.disabled = false;
   })();
 }
+
 function buildCategoryButtons() {
   var wrap = document.getElementById('cat-buttons');
   wrap.innerHTML = CAT_KEYS.map(function(cat) {
