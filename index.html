@@ -460,7 +460,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.4.0</div>
+<div class="version-stamp">KALSHI/EDGE v1.4.1</div>
 
 <script>
 'use strict';
@@ -475,7 +475,44 @@ var H = {'Accept':'application/json','User-Agent':'Mozilla/5.0'};
 // Verified against live Kalshi pages — series title slug is the canonical path segment
 
 // Cache: seriesTicker → slug (populated from series API data during fetchMarkets)
-var seriesSlugCache = {};
+var seriesSlugCache = {
+  // Hockey
+  'KXNHLGAME':    'nhl-game',
+  'KXNHLSPREAD':  'nhl-spread',
+  'KXNHLTOTAL':   'nhl-goal-total',
+  // Basketball
+  'KXNBAGAME':    'professional-basketball-game',
+  'KXNBASPREAD':  'pro-basketball-spread',
+  'KXNBATOTAL':   'pro-basketball-total-points',
+  'KXNBA1HSPREAD':'pro-basketball-1st-half-spread',
+  // College Basketball
+  'KXNCAAMBGAME':   'mens-college-basketball-mens-game',
+  'KXNCAAMBSPREAD': 'mens-college-basketball-spread',
+  // Baseball
+  'KXMLBGAME':    'professional-baseball-game',
+  'KXMLBSPREAD':  'pro-baseball-spread',
+  'KXMLBTOTAL':   'pro-baseball-total-points',
+  // American Football
+  'KXNFLSPREAD':  'pro-football-spread',
+  // Soccer - EPL
+  'KXEPLGAME':    'english-premier-league-game',
+  'KXEPLSPREAD':  'english-premier-league-game',
+  // Soccer - FA Cup
+  'KXFACUPGAME':    'fa-cup-game',
+  'KXFACUPSPREAD':  'fa-cup-game',
+  'KXFACUPADVANCE': 'fa-cup-advance',
+  // Soccer - Champions League
+  'KXUCLGAME':    'uefa-champions-league-game',
+  'KXUCLSPREAD':  'champions-league-spread',
+  // Soccer - Europa League
+  'KXUEFAGAME':   'uefa-soccer-games',
+  'KXUELSPREAD':  'europa-league-spread',
+  // Soccer - other
+  'KXSOCCERSPREAD':  'soccer-spread',
+  'KXLIGAMXSPREAD':  'liga-mx-game',
+  'KXSERIEA':        'serie-a',
+  'KXLIGUE1TOTAL':   'ligue-1-total',
+};
 
 // Prefetch slugs for unique series tickers in portfolio positions
 // Called after CSV import — silently fetches series titles → slug for each unique series
@@ -540,9 +577,9 @@ function kalshiUrl(ticker, eventTicker, seriesTicker) {
     }
   }
 
-  // Slug: use cache if available, otherwise slugify series title from cache key
-  // For portfolio where cache may be empty, fetch will populate it later
-  var slug = seriesSlugCache[st] || ev.toLowerCase();
+  // Slug: use cache if available, otherwise fall back to series ticker (lowercase)
+  // Kalshi will redirect either way — using series ticker is a better guess than event ticker
+  var slug = seriesSlugCache[st] || st.toLowerCase().replace(/^kx/, '').replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
 
   return 'https://kalshi.com/markets/' + series + '/' + slug + '/' + ev.toLowerCase();
 }
