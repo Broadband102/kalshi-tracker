@@ -429,9 +429,16 @@
     <div class="tag-buttons" id="tag-buttons"></div>
 
     <hr class="divider">
-    <div class="flex-row">
+    <div class="flex-row" style="flex-wrap:wrap;gap:8px;align-items:center;">
       <button class="btn btn-blue" id="btn-fetch-markets" onclick="fetchMarkets()">⚡ Fetch Markets</button>
       <button class="btn btn-green" id="btn-analyze-markets" onclick="analyzeMarkets()" style="display:none;">🤖 AI: Best Plays</button>
+      <!-- Today's Games toggle -->
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;" title="Show only games closing within the next 30 hours">
+        <div id="today-toggle-track" onclick="toggleTodayFilter()" style="width:32px;height:18px;border-radius:9px;background:var(--border2);position:relative;transition:background 0.2s;flex-shrink:0;">
+          <div id="today-toggle-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
+        </div>
+        <span id="today-toggle-label" style="font-family:var(--mono);font-size:0.72rem;color:var(--mid);">TODAY'S GAMES</span>
+      </label>
       <select id="sort-select" onchange="sortMarkets()">
         <option value="volume">Sort: Volume</option>
         <option value="yes_asc">Sort: Yes Price ↑</option>
@@ -460,7 +467,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.4.1</div>
+<div class="version-stamp">KALSHI/EDGE v1.4.2</div>
 
 <script>
 'use strict';
@@ -1306,12 +1313,33 @@ async function fetchMarkets() {
   setTimeout(function() { progressWrap.style.display = 'none'; }, 800);
 }
 
+var todayFilterOn = false;
+
+function toggleTodayFilter() {
+  todayFilterOn = !todayFilterOn;
+  var track = document.getElementById('today-toggle-track');
+  var thumb = document.getElementById('today-toggle-thumb');
+  var label = document.getElementById('today-toggle-label');
+  if (track) track.style.background = todayFilterOn ? 'var(--blue)' : 'var(--border2)';
+  if (thumb) thumb.style.left = todayFilterOn ? '16px' : '2px';
+  if (label) label.style.color = todayFilterOn ? 'var(--blue)' : 'var(--mid)';
+  renderMarketGrid();
+}
+
+function isTodaysGame(closeTime) {
+  if (!closeTime) return true; // no date → show it
+  var close = new Date(closeTime);
+  var now = new Date();
+  var diffH = (close - now) / 3600000;
+  return diffH >= -3 && diffH <= 30; // closes within next 30h (or just closed)
+}
+
 function sortMarkets() {
   renderMarketGrid();
 }
 
 function groupMatchEvents(markets) {
-  // Group markets by event_ticker — detect 3-way match events (Home/Tie/Away)
+  // Group markets by event_ticker
   var byEvent = {};
   markets.forEach(function(m) {
     var ev = m.event_ticker || m.ticker;
@@ -1324,35 +1352,50 @@ function groupMatchEvents(markets) {
 
   Object.keys(byEvent).forEach(function(ev) {
     var grp = byEvent[ev];
+    var seriesTicker = (grp[0].ticker||'').split('-')[0];
+    var totalVol = grp.reduce(function(a,m){ return a+(m.volume_24h||0); }, 0);
+
+    // ── 3-WAY: soccer with Tie/Draw ────────────────────────────────────────
     if (grp.length === 3) {
-      var subtitles = grp.map(function(m) { return (m.yes_sub_title||'').toLowerCase(); });
-      var hasTie = subtitles.some(function(s) { return s === 'tie' || s === 'draw'; });
+      var subtitles = grp.map(function(m){ return (m.yes_sub_title||'').toLowerCase(); });
+      var hasTie = subtitles.some(function(s){ return s === 'tie' || s === 'draw'; });
       if (hasTie) {
-        var tieM = grp.find(function(m) {
-          var s = (m.yes_sub_title||'').toLowerCase();
-          return s === 'tie' || s === 'draw';
-        });
-        var nonTie = grp.filter(function(m) {
-          var s = (m.yes_sub_title||'').toLowerCase();
-          return s !== 'tie' && s !== 'draw';
-        });
-        var totalVol = grp.reduce(function(a,m) { return a + (m.volume_24h||0); }, 0);
-        var seriesTicker = (grp[0].ticker||'').split('-')[0];
+        var tieM   = grp.find(function(m){ var s=(m.yes_sub_title||'').toLowerCase(); return s==='tie'||s==='draw'; });
+        var nonTie = grp.filter(function(m){ var s=(m.yes_sub_title||'').toLowerCase(); return s!=='tie'&&s!=='draw'; });
         matchGroups.push({
           event_ticker: ev,
           title: grp[0].title || ev,
-          home: nonTie[0],
-          tie: tieM,
-          away: nonTie[1],
-          all: grp,
-          seriesTicker: seriesTicker,
-          totalVol: totalVol,
-          close_time: grp[0].close_time
+          home: nonTie[0], tie: tieM, away: nonTie[1],
+          is3way: true,
+          all: grp, seriesTicker: seriesTicker,
+          totalVol: totalVol, close_time: grp[0].close_time
         });
         return;
       }
     }
-    grp.forEach(function(m) { singles.push(m); });
+
+    // ── 2-WAY: NHL, NBA, MLB, NCAAB etc — exactly 2 markets, both "Winner?" ─
+    if (grp.length === 2) {
+      var titles = grp.map(function(m){ return (m.title||'').toLowerCase(); });
+      var isWinner = titles.every(function(t){ return t.includes('winner') || t.includes('win?') || t.includes('wins?'); });
+      // Also detect by yes_sub_title — two distinct non-empty team names, not spread/total language
+      var subs = grp.map(function(m){ return (m.yes_sub_title||'').toLowerCase(); });
+      var isTeams = subs.every(function(s){ return s && !s.includes('over') && !s.includes('under') && !s.includes('spread') && !s.includes('point') && !s.includes('+') && !s.includes('-'); });
+      if (isWinner || isTeams) {
+        matchGroups.push({
+          event_ticker: ev,
+          title: grp[0].title || ev,
+          home: grp[0], tie: null, away: grp[1],
+          is3way: false,
+          all: grp, seriesTicker: seriesTicker,
+          totalVol: totalVol, close_time: grp[0].close_time
+        });
+        return;
+      }
+    }
+
+    // Everything else → singles (props, spreads, totals, etc.)
+    grp.forEach(function(m){ singles.push(m); });
   });
 
   return { matchGroups: matchGroups, singles: singles };
@@ -1360,32 +1403,37 @@ function groupMatchEvents(markets) {
 
 function renderMatchCard(mg, aiRanks) {
   var home  = mg.home  || {};
-  var tie   = mg.tie   || {};
+  var tie   = mg.tie   || null;
   var away  = mg.away  || {};
   var homeTeam = home.yes_sub_title || '?';
   var awayTeam = away.yes_sub_title || '?';
   var homeAsk = home.yes_ask || 0;
-  var tieAsk  = tie.yes_ask  || 0;
+  var tieAsk  = tie ? (tie.yes_ask || 0) : 0;
   var awayAsk = away.yes_ask || 0;
+  var is3way  = mg.is3way && tie;
 
   var kickoffStr = '';
   if (mg.close_time) {
     var d = new Date(mg.close_time);
-    var diffMs = d - new Date();
+    var now = new Date();
+    var diffMs = d - now;
     if (diffMs > 0) {
       var diffH = Math.floor(diffMs / 3600000);
       var diffD = Math.floor(diffH / 24);
       kickoffStr = diffD > 1 ? diffD + 'd' : diffH > 0 ? diffH + 'h' : 'soon';
     }
+    // Show date if more than 1 day away
+    var dateLabel = d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    kickoffStr = kickoffStr ? dateLabel + ' · ' + kickoffStr : dateLabel;
   }
 
-  var baseUrl = kalshiUrl(mg.home.ticker, mg.event_ticker, mg.seriesTicker);
-  var homeUrl = kalshiContractUrl(home.ticker || '', mg.event_ticker, mg.seriesTicker);
-  var tieUrl  = kalshiContractUrl(tie.ticker  || '', mg.event_ticker, mg.seriesTicker);
-  var awayUrl = kalshiContractUrl(away.ticker || '', mg.event_ticker, mg.seriesTicker);
+  var baseUrl  = kalshiUrl(mg.home.ticker, mg.event_ticker, mg.seriesTicker);
+  var homeUrl  = kalshiContractUrl(home.ticker || '', mg.event_ticker, mg.seriesTicker);
+  var awayUrl  = kalshiContractUrl(away.ticker || '', mg.event_ticker, mg.seriesTicker);
+  var tieUrl   = is3way ? kalshiContractUrl(tie.ticker || '', mg.event_ticker, mg.seriesTicker) : baseUrl;
 
   var homeAI = aiRanks[home.ticker];
-  var tieAI  = aiRanks[tie.ticker];
+  var tieAI  = tie ? aiRanks[tie.ticker] : null;
   var awayAI = aiRanks[away.ticker];
   var topAI  = homeAI || tieAI || awayAI;
 
@@ -1396,9 +1444,52 @@ function renderMatchCard(mg, aiRanks) {
     aiBadge = '<div style="margin-bottom:8px;"><span style="font-family:var(--mono);font-size:0.62rem;font-weight:700;color:' + edgeCol + ';background:rgba(0,0,0,0.4);border:1px solid ' + edgeCol + ';border-radius:3px;padding:2px 8px;">🤖 AI #' + topAI.rank + ' · BUY ' + aiSide + ' @ ' + topAI.entry + '¢ · +' + topAI.edge + '¢ edge</span></div>';
   }
 
+  // Sport label from series ticker
+  var sportLabels = {
+    KXNHLGAME:'NHL', KXNHLTOTAL:'NHL', KXNHLSPREAD:'NHL',
+    KXNBAGAME:'NBA', KXNBASPREAD:'NBA', KXNBATOTAL:'NBA',
+    KXNCAAMBGAME:'NCAAB', KXNCAAMBSPREAD:'NCAAB',
+    KXMLBGAME:'MLB', KXMLBSPREAD:'MLB', KXMLBTOTAL:'MLB',
+    KXNFLGAME:'NFL', KXNFLSPREAD:'NFL',
+    KXEPLGAME:'EPL', KXFACUPGAME:'FA CUP', KXUCLGAME:'UCL', KXUEFAGAME:'UEFA',
+  };
+  var sportLabel = sportLabels[mg.seriesTicker] || mg.seriesTicker.replace('KX','');
+
+  // Probability bar
+  var totalAsk = homeAsk + (is3way ? tieAsk : 0) + awayAsk;
+  var probBar = totalAsk > 0
+    ? '<div style="display:flex;gap:2px;height:4px;border-radius:2px;overflow:hidden;margin-bottom:10px;background:var(--bg3);">' +
+        '<div style="flex:' + homeAsk + ';background:var(--green);"></div>' +
+        (is3way ? '<div style="flex:' + tieAsk + ';background:var(--yellow);"></div>' : '') +
+        '<div style="flex:' + awayAsk + ';background:var(--blue);"></div>' +
+      '</div>'
+    : '';
+
+  // Odds buttons row
+  var oddsRow = '<div style="display:flex;gap:6px;margin-bottom:8px;" onclick="event.stopPropagation();">' +
+    '<div onclick="window.open(\'' + homeUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(62,196,130,0.08);border:1px solid var(--green);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(62,196,130,0.2)\'" onmouseout="this.style.background=\'rgba(62,196,130,0.08)\'">' +
+      '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--green);">' + homeAsk + '¢</div>' +
+      '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">' + homeTeam.slice(0,14) + '</div>' +
+    '</div>';
+
+  if (is3way) {
+    oddsRow += '<div onclick="window.open(\'' + tieUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(235,195,60,0.08);border:1px solid var(--yellow);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(235,195,60,0.2)\'" onmouseout="this.style.background=\'rgba(235,195,60,0.08)\'">' +
+      '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--yellow);">' + tieAsk + '¢</div>' +
+      '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">DRAW</div>' +
+    '</div>';
+  }
+
+  oddsRow += '<div onclick="window.open(\'' + awayUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(74,153,233,0.08);border:1px solid var(--blue);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(74,153,233,0.2)\'" onmouseout="this.style.background=\'rgba(74,153,233,0.08)\'">' +
+    '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--blue);">' + awayAsk + '¢</div>' +
+    '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">' + awayTeam.slice(0,14) + '</div>' +
+  '</div></div>';
+
   return '<div class="mkt-card match-card" onclick="window.open(\'' + baseUrl + '\',\'_blank\')" style="' + (topAI ? 'border-color:var(--border2);' : '') + '">' +
     aiBadge +
-    '<div class="mkt-meta" style="margin-bottom:6px;">' + mg.seriesTicker + ' · ' + mg.event_ticker + (kickoffStr ? ' · ⏱ ' + kickoffStr : '') + '</div>' +
+    '<div class="mkt-meta" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">' +
+      '<span style="color:var(--blue);font-weight:700;">' + sportLabel + '</span>' +
+      (kickoffStr ? '<span>⏱ ' + kickoffStr + '</span>' : '') +
+    '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">' +
       '<div style="flex:1;text-align:left;">' +
         '<div style="font-size:0.95rem;font-weight:700;color:var(--text);line-height:1.2;">' + homeTeam + '</div>' +
@@ -1410,25 +1501,8 @@ function renderMatchCard(mg, aiRanks) {
         '<div style="font-size:0.7rem;color:var(--dim);margin-top:2px;">AWAY</div>' +
       '</div>' +
     '</div>' +
-    '<div style="display:flex;gap:2px;height:4px;border-radius:2px;overflow:hidden;margin-bottom:10px;background:var(--bg3);">' +
-      '<div style="flex:' + homeAsk + ';background:var(--green);"></div>' +
-      '<div style="flex:' + tieAsk  + ';background:var(--yellow);"></div>' +
-      '<div style="flex:' + awayAsk + ';background:var(--blue);"></div>' +
-    '</div>' +
-    '<div style="display:flex;gap:6px;margin-bottom:8px;" onclick="event.stopPropagation();">' +
-      '<div onclick="window.open(\'' + homeUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(62,196,130,0.08);border:1px solid var(--green);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(62,196,130,0.2)\'" onmouseout="this.style.background=\'rgba(62,196,130,0.08)\'">' +
-        '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--green);">' + homeAsk + '¢</div>' +
-        '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">' + homeTeam.slice(0,12) + '</div>' +
-      '</div>' +
-      '<div onclick="window.open(\'' + tieUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(235,195,60,0.08);border:1px solid var(--yellow);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(235,195,60,0.2)\'" onmouseout="this.style.background=\'rgba(235,195,60,0.08)\'">' +
-        '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--yellow);">' + tieAsk + '¢</div>' +
-        '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">DRAW</div>' +
-      '</div>' +
-      '<div onclick="window.open(\'' + awayUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(74,153,233,0.08);border:1px solid var(--blue);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(74,153,233,0.2)\'" onmouseout="this.style.background=\'rgba(74,153,233,0.08)\'">' +
-        '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--blue);">' + awayAsk + '¢</div>' +
-        '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">' + awayTeam.slice(0,12) + '</div>' +
-      '</div>' +
-    '</div>' +
+    probBar +
+    oddsRow +
     '<div style="display:flex;justify-content:space-between;align-items:center;">' +
       '<span class="price-vol">vol24h ' + mg.totalVol.toLocaleString() + '</span>' +
       '<span style="font-family:var(--mono);font-size:0.68rem;color:var(--blue);">↗ View Match</span>' +
@@ -1443,6 +1517,12 @@ function renderMarketGrid() {
   var grouped = groupMatchEvents(markets);
   var matchGroups = grouped.matchGroups;
   var singles     = grouped.singles;
+
+  // ── Today's Games filter ────────────────────────────────────────────────
+  if (todayFilterOn) {
+    matchGroups = matchGroups.filter(function(mg) { return isTodaysGame(mg.close_time); });
+    singles     = singles.filter(function(m)  { return isTodaysGame(m.close_time); });
+  }
 
   if (sort === 'volume') {
     matchGroups.sort(function(a,b) { return (b.totalVol||0) - (a.totalVol||0); });
