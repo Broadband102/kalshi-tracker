@@ -355,7 +355,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.2.1</div>
+<div class="version-stamp">KALSHI/EDGE v1.3.0</div>
 
 <script>
 'use strict';
@@ -364,12 +364,37 @@
 var BASE = 'https://api.elections.kalshi.com/trade-api/v2';
 var H = {'Accept':'application/json','User-Agent':'Mozilla/5.0'};
 
-// Kalshi URL: kalshi.com/markets/{series}/{event_ticker}/{market_ticker}
-function kalshiUrl(ticker, eventTicker) {
-  var series = ticker.split('-')[0].toLowerCase();
+// Kalshi URL builder
+// The URL middle segment is the series title slugified (not the event_ticker)
+// e.g. "English Premier League Game" → "english-premier-league-game"
+// Verified against live Kalshi pages — series title slug is the canonical path segment
+
+// Cache: seriesTicker → slug (populated from series API data during fetchMarkets)
+var seriesSlugCache = {};
+
+function slugify(title) {
+  return (title||'').toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')   // strip special chars
+    .replace(/\s+/g, '-')            // spaces → dashes
+    .replace(/-+/g, '-')             // collapse multiple dashes
+    .trim();
+}
+
+function kalshiUrl(ticker, eventTicker, seriesTicker) {
+  var series = (seriesTicker || ticker.split('-')[0]).toLowerCase();
+  var slug   = seriesSlugCache[series.toUpperCase()] || (eventTicker || ticker).toLowerCase();
   var ev     = (eventTicker || ticker).toLowerCase();
   var mk     = ticker.toLowerCase();
-  return 'https://kalshi.com/markets/' + series + '/' + ev + '/' + mk;
+  return 'https://kalshi.com/markets/' + series + '/' + slug + '/' + ev;
+}
+
+// Individual outcome URL — links directly to a specific market contract
+function kalshiContractUrl(ticker, eventTicker, seriesTicker) {
+  var series = (seriesTicker || ticker.split('-')[0]).toLowerCase();
+  var slug   = seriesSlugCache[series.toUpperCase()] || (eventTicker || ticker).toLowerCase();
+  var ev     = (eventTicker || ticker).toLowerCase();
+  var mk     = ticker.toLowerCase();
+  return 'https://kalshi.com/markets/' + series + '/' + slug + '/' + ev + '?market=' + mk;
 }
 
 // ── API COST TRACKING ─────────────────────────────────────────────────────────
@@ -847,21 +872,30 @@ async function analyzeMarkets() {
   summaryEl.style.display = 'none';
   statusEl.textContent = 'analyzing ' + fetchedMarkets.length + ' markets';
 
-  // Cap at 40 markets (was 80) — keeps input well under 30k token/min rate limit
-  // Each market line ≈ 25 tokens; 40 markets ≈ 1,000 tokens of market data
-  var toAnalyze = fetchedMarkets.slice().sort(function(a,b) {
-    return (b.volume_24h||0) - (a.volume_24h||0);
-  }).slice(0, 40);
+  // Group into match events first — send matches as single entries, not 3 separate contracts
+  var grouped = groupMatchEvents(fetchedMarkets);
+  var matchGroups = grouped.matchGroups;
+  var singles = grouped.singles;
 
-  // Compact format — strip to essentials only, ~25 tokens per market
-  var mktText = toAnalyze.map(function(m, i) {
-    var mid = Math.round(((m.yes_ask||0) + (m.yes_bid||0)) / 2);
-    var spread = (m.yes_ask||0) - (m.yes_bid||0);
-    // Truncate title hard at 80 chars
-    var title = (m.title||m.ticker).slice(0, 80);
-    return (i+1) + '. ' + m.ticker + ' | ' + title +
-      ' | YES=' + (m.yes_ask||'?') + '¢ NO=' + (m.no_ask||'?') + '¢ mid=' + mid + '¢ sprd=' + spread + '¢ vol=' + (m.volume_24h||0);
+  // Build compact text: matches first (most interesting), then top singles by volume
+  var matchText = matchGroups.slice(0, 20).map(function(mg, i) {
+    var home = mg.home || {}; var away = mg.away || {}; var tie = mg.tie || {};
+    var homeTeam = home.yes_sub_title || '?'; var awayTeam = away.yes_sub_title || '?';
+    return (i+1) + '. MATCH: ' + homeTeam + ' vs ' + awayTeam +
+      ' | ' + mg.event_ticker +
+      ' | Home=' + (home.yes_ask||'?') + '¢ Draw=' + (tie.yes_ask||'?') + '¢ Away=' + (away.yes_ask||'?') + '¢' +
+      ' | vol=' + mg.totalVol;
   }).join('\n');
+
+  var singlesTop = singles.slice().sort(function(a,b){return(b.volume_24h||0)-(a.volume_24h||0);}).slice(0, 20);
+  var singlesText = singlesTop.map(function(m, i) {
+    var mid = Math.round(((m.yes_ask||0) + (m.yes_bid||0)) / 2);
+    return (matchGroups.length + i + 1) + '. ' + m.ticker + ' | ' + (m.title||'').slice(0,70) +
+      ' | YES=' + (m.yes_ask||'?') + '¢ mid=' + mid + '¢ vol=' + (m.volume_24h||0);
+  }).join('\n');
+
+  var mktText = matchText + (singlesText ? '\n\nOTHER MARKETS:\n' + singlesText : '');
+  var toAnalyze = { length: matchGroups.length + singlesTop.length };
 
   var today = new Date().toLocaleDateString('en-US', {weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
@@ -875,11 +909,12 @@ async function analyzeMarkets() {
         max_tokens: 2000,
         tools: [{type:'web_search_20250305', name:'web_search'}],
         messages: [{role:'user', content:
-          'Today: ' + today + '. Expert Kalshi trader.\n\n' +
-          'LIVE MARKETS (' + toAnalyze.length + '):\n' + mktText + '\n\n' +
-          'Search news for these markets. Pick TOP 5 best plays by edge (market price vs true probability).\n\n' +
+          'Today: ' + today + '. Expert Kalshi trader analyzing soccer/sports prediction markets.\n\n' +
+          'MARKETS (' + toAnalyze.length + '):\n' + mktText + '\n\n' +
+          'For MATCH entries: Home/Draw/Away prices shown. Prices are in cents (50¢ = 50% implied prob).\n' +
+          'Search for news. Pick TOP 5 best plays by edge. For matches, specify which outcome to buy.\n\n' +
           'JSON only, no markdown:\n' +
-          '{"plays":[{"ticker":"X","side":"YES","entry_price":45,"true_prob":72,"edge":27,"confidence":82,"reason":"one sentence with evidence"}],"summary":"2 sentences max"}'
+          '{"plays":[{"ticker":"KXEPLGAME-26MAR22NEWSUN-NEW","side":"HOME","entry_price":63,"true_prob":72,"edge":9,"confidence":75,"reason":"one sentence with evidence"}],"summary":"2 sentences max"}'
         }]
       })
     });
@@ -1013,6 +1048,14 @@ async function fetchMarkets() {
     var d = await r.json();
     allSeries = d.series || [];
 
+    // Build slug cache: seriesTicker → kebab slug from series title
+    // This powers correct Kalshi URLs (e.g. "English Premier League Game" → "english-premier-league-game")
+    allSeries.forEach(function(s) {
+      if (s.ticker && s.title) {
+        seriesSlugCache[s.ticker] = slugify(s.title);
+      }
+    });
+
     // Filter by selected tags if any
     if (selectedTags.size > 0) {
       allSeries = allSeries.filter(function(s) {
@@ -1071,128 +1114,230 @@ function sortMarkets() {
   renderMarketGrid();
 }
 
+function groupMatchEvents(markets) {
+  // Group markets by event_ticker — detect 3-way match events (Home/Tie/Away)
+  var byEvent = {};
+  markets.forEach(function(m) {
+    var ev = m.event_ticker || m.ticker;
+    if (!byEvent[ev]) byEvent[ev] = [];
+    byEvent[ev].push(m);
+  });
+
+  var matchGroups = [];
+  var singles = [];
+
+  Object.keys(byEvent).forEach(function(ev) {
+    var grp = byEvent[ev];
+    if (grp.length === 3) {
+      var subtitles = grp.map(function(m) { return (m.yes_sub_title||'').toLowerCase(); });
+      var hasTie = subtitles.some(function(s) { return s === 'tie' || s === 'draw'; });
+      if (hasTie) {
+        var tieM = grp.find(function(m) {
+          var s = (m.yes_sub_title||'').toLowerCase();
+          return s === 'tie' || s === 'draw';
+        });
+        var nonTie = grp.filter(function(m) {
+          var s = (m.yes_sub_title||'').toLowerCase();
+          return s !== 'tie' && s !== 'draw';
+        });
+        var totalVol = grp.reduce(function(a,m) { return a + (m.volume_24h||0); }, 0);
+        var seriesTicker = (grp[0].ticker||'').split('-')[0];
+        matchGroups.push({
+          event_ticker: ev,
+          title: grp[0].title || ev,
+          home: nonTie[0],
+          tie: tieM,
+          away: nonTie[1],
+          all: grp,
+          seriesTicker: seriesTicker,
+          totalVol: totalVol,
+          close_time: grp[0].close_time
+        });
+        return;
+      }
+    }
+    grp.forEach(function(m) { singles.push(m); });
+  });
+
+  return { matchGroups: matchGroups, singles: singles };
+}
+
+function renderMatchCard(mg, aiRanks) {
+  var home  = mg.home  || {};
+  var tie   = mg.tie   || {};
+  var away  = mg.away  || {};
+  var homeTeam = home.yes_sub_title || '?';
+  var awayTeam = away.yes_sub_title || '?';
+  var homeAsk = home.yes_ask || 0;
+  var tieAsk  = tie.yes_ask  || 0;
+  var awayAsk = away.yes_ask || 0;
+
+  var kickoffStr = '';
+  if (mg.close_time) {
+    var d = new Date(mg.close_time);
+    var diffMs = d - new Date();
+    if (diffMs > 0) {
+      var diffH = Math.floor(diffMs / 3600000);
+      var diffD = Math.floor(diffH / 24);
+      kickoffStr = diffD > 1 ? diffD + 'd' : diffH > 0 ? diffH + 'h' : 'soon';
+    }
+  }
+
+  var baseUrl = kalshiUrl(mg.home.ticker, mg.event_ticker, mg.seriesTicker);
+  var homeUrl = kalshiContractUrl(home.ticker || '', mg.event_ticker, mg.seriesTicker);
+  var tieUrl  = kalshiContractUrl(tie.ticker  || '', mg.event_ticker, mg.seriesTicker);
+  var awayUrl = kalshiContractUrl(away.ticker || '', mg.event_ticker, mg.seriesTicker);
+
+  var homeAI = aiRanks[home.ticker];
+  var tieAI  = aiRanks[tie.ticker];
+  var awayAI = aiRanks[away.ticker];
+  var topAI  = homeAI || tieAI || awayAI;
+
+  var aiBadge = '';
+  if (topAI) {
+    var aiSide = homeAI ? homeTeam : tieAI ? 'DRAW' : awayTeam;
+    var edgeCol = topAI.edge >= 15 ? 'var(--green)' : topAI.edge >= 8 ? 'var(--yellow)' : 'var(--mid)';
+    aiBadge = '<div style="margin-bottom:8px;"><span style="font-family:var(--mono);font-size:0.62rem;font-weight:700;color:' + edgeCol + ';background:rgba(0,0,0,0.4);border:1px solid ' + edgeCol + ';border-radius:3px;padding:2px 8px;">🤖 AI #' + topAI.rank + ' · BUY ' + aiSide + ' @ ' + topAI.entry + '¢ · +' + topAI.edge + '¢ edge</span></div>';
+  }
+
+  return '<div class="mkt-card match-card" onclick="window.open(\'' + baseUrl + '\',\'_blank\')" style="' + (topAI ? 'border-color:var(--border2);' : '') + '">' +
+    aiBadge +
+    '<div class="mkt-meta" style="margin-bottom:6px;">' + mg.seriesTicker + ' · ' + mg.event_ticker + (kickoffStr ? ' · ⏱ ' + kickoffStr : '') + '</div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">' +
+      '<div style="flex:1;text-align:left;">' +
+        '<div style="font-size:0.95rem;font-weight:700;color:var(--text);line-height:1.2;">' + homeTeam + '</div>' +
+        '<div style="font-size:0.7rem;color:var(--dim);margin-top:2px;">HOME</div>' +
+      '</div>' +
+      '<div style="font-family:var(--mono);font-size:0.75rem;font-weight:700;color:var(--dim);flex-shrink:0;">VS</div>' +
+      '<div style="flex:1;text-align:right;">' +
+        '<div style="font-size:0.95rem;font-weight:700;color:var(--text);line-height:1.2;">' + awayTeam + '</div>' +
+        '<div style="font-size:0.7rem;color:var(--dim);margin-top:2px;">AWAY</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:2px;height:4px;border-radius:2px;overflow:hidden;margin-bottom:10px;background:var(--bg3);">' +
+      '<div style="flex:' + homeAsk + ';background:var(--green);"></div>' +
+      '<div style="flex:' + tieAsk  + ';background:var(--yellow);"></div>' +
+      '<div style="flex:' + awayAsk + ';background:var(--blue);"></div>' +
+    '</div>' +
+    '<div style="display:flex;gap:6px;margin-bottom:8px;" onclick="event.stopPropagation();">' +
+      '<div onclick="window.open(\'' + homeUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(62,196,130,0.08);border:1px solid var(--green);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(62,196,130,0.2)\'" onmouseout="this.style.background=\'rgba(62,196,130,0.08)\'">' +
+        '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--green);">' + homeAsk + '¢</div>' +
+        '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">' + homeTeam.slice(0,12) + '</div>' +
+      '</div>' +
+      '<div onclick="window.open(\'' + tieUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(235,195,60,0.08);border:1px solid var(--yellow);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(235,195,60,0.2)\'" onmouseout="this.style.background=\'rgba(235,195,60,0.08)\'">' +
+        '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--yellow);">' + tieAsk + '¢</div>' +
+        '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">DRAW</div>' +
+      '</div>' +
+      '<div onclick="window.open(\'' + awayUrl + '\',\'_blank\')" style="flex:1;text-align:center;cursor:pointer;background:rgba(74,153,233,0.08);border:1px solid var(--blue);border-radius:6px;padding:6px 4px;" onmouseover="this.style.background=\'rgba(74,153,233,0.2)\'" onmouseout="this.style.background=\'rgba(74,153,233,0.08)\'">' +
+        '<div style="font-family:var(--mono);font-size:1rem;font-weight:800;color:var(--blue);">' + awayAsk + '¢</div>' +
+        '<div style="font-size:0.65rem;color:var(--dim);margin-top:1px;">' + awayTeam.slice(0,12) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+      '<span class="price-vol">vol24h ' + mg.totalVol.toLocaleString() + '</span>' +
+      '<span style="font-family:var(--mono);font-size:0.68rem;color:var(--blue);">↗ View Match</span>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderMarketGrid() {
   var markets = fetchedMarkets.slice();
   var sort = document.getElementById('sort-select').value;
 
+  var grouped = groupMatchEvents(markets);
+  var matchGroups = grouped.matchGroups;
+  var singles     = grouped.singles;
+
   if (sort === 'volume') {
-    markets.sort(function(a,b) { return (b.volume_24h||0) - (a.volume_24h||0); });
-  } else if (sort === 'yes_asc') {
-    markets.sort(function(a,b) { return (a.yes_ask||0) - (b.yes_ask||0); });
-  } else if (sort === 'yes_desc') {
-    markets.sort(function(a,b) { return (b.yes_ask||0) - (a.yes_ask||0); });
+    matchGroups.sort(function(a,b) { return (b.totalVol||0) - (a.totalVol||0); });
+    singles.sort(function(a,b) { return (b.volume_24h||0) - (a.volume_24h||0); });
   } else if (sort === 'mid50') {
-    markets.sort(function(a,b) {
-      var midA = Math.abs(((a.yes_ask||0) + (a.yes_bid||0))/2 - 50);
-      var midB = Math.abs(((b.yes_ask||0) + (b.yes_bid||0))/2 - 50);
-      return midA - midB;
+    matchGroups.sort(function(a,b) {
+      return Math.abs((a.home?a.home.yes_ask:50)-50) - Math.abs((b.home?b.home.yes_ask:50)-50);
+    });
+    singles.sort(function(a,b) {
+      return Math.abs(((a.yes_ask||0)+(a.yes_bid||0))/2-50) - Math.abs(((b.yes_ask||0)+(b.yes_bid||0))/2-50);
     });
   } else if (sort === 'ai') {
-    markets.sort(function(a,b) {
-      var ra = aiRanks[a.ticker] ? aiRanks[a.ticker].rank : 999;
-      var rb = aiRanks[b.ticker] ? aiRanks[b.ticker].rank : 999;
+    matchGroups.sort(function(a,b) {
+      var ra = (aiRanks[a.home&&a.home.ticker]||aiRanks[a.away&&a.away.ticker]||{rank:999}).rank;
+      var rb = (aiRanks[b.home&&b.home.ticker]||aiRanks[b.away&&b.away.ticker]||{rank:999}).rank;
       return ra - rb;
     });
+    singles.sort(function(a,b) {
+      return (aiRanks[a.ticker]?aiRanks[a.ticker].rank:999) - (aiRanks[b.ticker]?aiRanks[b.ticker].rank:999);
+    });
+  } else if (sort === 'yes_asc') {
+    singles.sort(function(a,b) { return (a.yes_ask||0) - (b.yes_ask||0); });
+  } else if (sort === 'yes_desc') {
+    singles.sort(function(a,b) { return (b.yes_ask||0) - (a.yes_ask||0); });
   }
 
   var grid = document.getElementById('market-grid');
-  var countEl = document.getElementById('browse-count');
-  countEl.textContent = markets.length + ' markets';
+  document.getElementById('browse-count').textContent = matchGroups.length + ' matches · ' + singles.length + ' markets';
 
-  if (!markets.length) {
+  if (!matchGroups.length && !singles.length) {
     grid.innerHTML = '<div class="empty">No open markets with live prices found</div>';
     return;
   }
 
-  grid.innerHTML = markets.slice(0, 200).map(function(m) {
-    // ── CONFIRMED URL FORMAT (verified against 100 live contracts) ──
-    // Format: kalshi.com/markets/{series}/{event_ticker}/{market_ticker} (all lowercase)
-    // Kalshi redirects this to the correct pretty-slug event page
-    var series = (m.ticker||'').split('-')[0].toLowerCase();
-    var ev     = (m.event_ticker||'').toLowerCase();
-    var mk     = (m.ticker||'').toLowerCase();
-    var url    = 'https://kalshi.com/markets/' + series + '/' + ev + '/' + mk;
+  var matchHtml = matchGroups.slice(0, 100).map(function(mg) {
+    return renderMatchCard(mg, aiRanks);
+  }).join('');
 
+  var singlesHtml = singles.slice(0, 100).map(function(m) {
+    var seriesTicker = (m.ticker||'').split('-')[0];
+    var url = kalshiUrl(m.ticker, m.event_ticker, seriesTicker);
     var yesAsk = m.yes_ask || 0;
     var yesBid = m.yes_bid || 0;
     var noAsk  = m.no_ask  || 0;
-    var noBid  = m.no_bid  || 0;
     var mid    = (yesAsk + yesBid) / 2;
     var spread = yesAsk - yesBid;
-
-    // Probability bar fill: mid price = probability YES wins
     var barPct = Math.max(2, Math.min(98, mid));
-
-    // Close time human-readable
     var closeStr = '';
     if (m.close_time) {
       var d = new Date(m.close_time);
-      var now = new Date();
-      var diffMs = d - now;
+      var diffMs = d - new Date();
       if (diffMs > 0) {
         var diffH = Math.floor(diffMs / 3600000);
         var diffD = Math.floor(diffH / 24);
         closeStr = diffD > 1 ? 'closes in ' + diffD + 'd' : diffH > 0 ? 'closes in ' + diffH + 'h' : 'closing soon';
-      } else {
-        closeStr = 'expired';
-      }
+      } else { closeStr = 'expired'; }
     }
-
-    // Mission description — translate ticker into plain English context
-    var ticker = m.ticker || '';
-    var subtitle = m.subtitle || '';
-    var title = m.title || ticker;
-
-    // Build the "mission brief" — what you're actually betting on
+    var title = m.title || m.ticker;
     var yesLabel = m.yes_sub_title || 'YES';
     var noLabel  = m.no_sub_title  || 'NO';
-
-    // Edge/value signal
-    var valueSignal = '';
-    var valueColor  = '';
-    if (spread <= 2 && yesAsk > 0) {
-      valueSignal = '🟢 Tight spread'; valueColor = 'var(--green)';
-    } else if (spread <= 5) {
-      valueSignal = '🟡 Fair spread'; valueColor = 'var(--yellow)';
-    } else if (spread > 10) {
-      valueSignal = '🔴 Wide spread'; valueColor = 'var(--red)';
-    }
-
+    var valueSignal = ''; var valueColor = '';
+    if (spread <= 2 && yesAsk > 0) { valueSignal = '🟢 Tight'; valueColor = 'var(--green)'; }
+    else if (spread <= 5) { valueSignal = '🟡 Fair'; valueColor = 'var(--yellow)'; }
+    else if (spread > 10) { valueSignal = '🔴 Wide'; valueColor = 'var(--red)'; }
     var aiRank = aiRanks[m.ticker];
     var aiBadge = '';
     if (aiRank) {
       var edgeCol = aiRank.edge >= 15 ? 'var(--green)' : aiRank.edge >= 8 ? 'var(--yellow)' : 'var(--mid)';
-      aiBadge = '<div style="margin-bottom:7px;">' +
-        '<span style="font-family:var(--mono);font-size:0.62rem;font-weight:700;color:' + edgeCol + ';background:rgba(0,0,0,0.4);border:1px solid ' + edgeCol + ';border-radius:3px;padding:2px 8px;">🤖 AI #' + aiRank.rank + ' · BUY ' + aiRank.side + ' @ ' + aiRank.entry + '¢ · +' + aiRank.edge + '¢ edge</span>' +
-      '</div>';
+      aiBadge = '<div style="margin-bottom:7px;"><span style="font-family:var(--mono);font-size:0.62rem;font-weight:700;color:' + edgeCol + ';background:rgba(0,0,0,0.4);border:1px solid ' + edgeCol + ';border-radius:3px;padding:2px 8px;">🤖 AI #' + aiRank.rank + ' · BUY ' + aiRank.side + ' @ ' + aiRank.entry + '¢ · +' + aiRank.edge + '¢ edge</span></div>';
     }
-
     return '<div class="mkt-card" onclick="window.open(\'' + url + '\',\'_blank\')" style="' + (aiRank ? 'border-color:var(--border2);' : '') + '">' +
       aiBadge +
-      // Title — the plain English question
       '<div class="mkt-title">' + title + '</div>' +
-      // Subtitle if different from title
-      (subtitle && subtitle !== title ? '<div style="font-size:0.75rem;color:var(--mid);margin-bottom:4px;">' + subtitle.slice(0,100) + '</div>' : '') +
-      // Ticker + event context
-      '<div class="mkt-meta">' + ticker + ' · ' + (m.event_ticker||'') + (closeStr ? ' · ' + closeStr : '') + '</div>' +
-      // Probability bar — visual at-a-glance
+      '<div class="mkt-meta">' + m.ticker + ' · ' + (m.event_ticker||'') + (closeStr ? ' · ' + closeStr : '') + '</div>' +
       '<div class="mkt-spread-bar" title="YES probability ' + Math.round(mid) + '%">' +
         '<div class="mkt-spread-fill" style="width:' + barPct + '%"></div>' +
       '</div>' +
-      // Outcome pills
       '<div class="mkt-outcome-row">' +
-        '<span class="outcome-pill yes">YES ' + yesAsk + '¢</span>' +
-        '<span class="outcome-pill no">NO ' + noAsk + '¢</span>' +
+        '<span class="outcome-pill yes">' + yesLabel + ' ' + yesAsk + '¢</span>' +
+        '<span class="outcome-pill no">' + noLabel + ' ' + noAsk + '¢</span>' +
         '<span class="outcome-pill mid">' + Math.round(mid) + '¢ implied</span>' +
         (valueSignal ? '<span class="outcome-pill" style="color:' + valueColor + ';border-color:' + valueColor + ';background:transparent;">' + valueSignal + '</span>' : '') +
       '</div>' +
-      // Volume + trade link
       '<div style="display:flex;justify-content:space-between;align-items:center;">' +
         '<span class="price-vol">vol24h ' + (m.volume_24h||0).toLocaleString() + '</span>' +
         '<span style="font-family:var(--mono);font-size:0.68rem;color:var(--blue);">↗ Trade</span>' +
       '</div>' +
     '</div>';
   }).join('');
+
+  grid.innerHTML = matchHtml + singlesHtml;
 }
 
 
