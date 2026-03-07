@@ -3,7 +3,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kalshi Edge">
+  <meta name="theme-color" content="#0a0c0f">
 <title>KALSHI EDGE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -229,6 +233,187 @@ background: var(–card); color: var(–mid); white-space: nowrap;
 .mkt-closes { font-family: var(–mono); font-size: 0.62rem; color: var(–dim); }
 .mkt-spread-bar { height: 3px; background: var(–border); border-radius: 2px; margin: 5px 0 7px; overflow: hidden; }
 .mkt-spread-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(–red), var(–yellow), var(–green)); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+MOBILE / iPHONE  — full responsive overrides
+Breakpoints: 768px (tablet), 480px (phone)
+══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+/* Top bar — compact */
+.topbar { padding: 10px 16px; gap: 8px; flex-wrap: wrap; }
+.topbar-logo { font-size: 0.88rem; }
+.cost-badge { font-size: 0.62rem; padding: 3px 7px; gap: 10px; }
+.proxy-input { display: none; } /* hidden on mobile — hard-coded anyway */
+
+```
+/* Tabs — scrollable pill row */
+.tabs { padding: 0 12px; gap: 2px; }
+.tab { font-size: 0.75rem; padding: 10px 14px; }
+
+/* Panels — tighter padding */
+.panel { padding: 16px 14px; }
+
+/* Portfolio grid — 2 col on tablet */
+.portfolio-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.stat-val { font-size: 1.1rem; }
+
+/* Market grid — single column */
+.market-grid { grid-template-columns: 1fr; gap: 8px; }
+
+/* Category buttons — tight wrap */
+.cat-buttons { gap: 5px; }
+.btn { font-size: 0.7rem; padding: 7px 12px; }
+
+/* Match cards */
+.match-card { padding: 12px 14px; }
+.match-teams { font-size: 0.85rem; }
+
+/* AI plays */
+.ai-card { padding: 12px 13px; }
+.ai-action-row { flex-wrap: wrap; gap: 8px; }
+.action-badge { font-size: 0.7rem; }
+
+/* Version stamp — smaller */
+.version-stamp { font-size: 8px; }
+```
+
+}
+
+@media (max-width: 480px) {
+/* ── Top bar ── */
+.topbar {
+padding: 8px 14px;
+position: sticky; top: 0; z-index: 100;
+background: var(–surface);
+border-bottom: 1px solid var(–border);
+}
+.topbar-logo { font-size: 0.82rem; letter-spacing: 0.1em; }
+.cost-badge { font-size: 0.58rem; gap: 8px; }
+
+```
+/* ── Tabs — big touch targets, horizontal scroll ── */
+.tabs {
+  padding: 0 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  font-size: 0.72rem;
+  padding: 11px 12px;
+  flex-shrink: 0;
+}
+
+/* ── Panels ── */
+.panel { padding: 14px 12px; }
+
+/* ── Portfolio stats — 2 col ── */
+.portfolio-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+.stat-box { padding: 10px 12px; border-radius: 8px; }
+.stat-label { font-size: 0.58rem; }
+.stat-val { font-size: 1rem; }
+
+/* ── Position rows — vertical stack ── */
+.pos-row {
+  flex-direction: column; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+}
+.pos-actions { margin-left: 0; width: 100%; justify-content: flex-start; }
+.pbtn { padding: 7px 12px; font-size: 0.68rem; }
+
+/* ── Category buttons — pill style, tight ── */
+.cat-buttons { gap: 5px; margin-bottom: 12px; }
+.btn { font-size: 0.68rem; padding: 8px 11px; border-radius: 6px; }
+.btn.on { box-shadow: 0 0 0 1px var(--blue); }
+
+/* Tag buttons */
+.tag-btn { font-size: 0.62rem; padding: 4px 9px; border-radius: 10px; }
+
+/* ── Market grid — single col, full width ── */
+.market-grid { grid-template-columns: 1fr; gap: 8px; }
+.mkt-card { padding: 12px 13px; border-radius: 8px; }
+.mkt-title { font-size: 0.82rem; }
+.mkt-meta { font-size: 0.6rem; }
+
+/* ── Match cards ── */
+.match-card { padding: 12px 13px; border-radius: 10px; }
+
+/* ── AI plays cards ── */
+.ai-card {
+  padding: 13px 13px; border-radius: 10px;
+  /* bigger left border for visual clarity */
+  border-left-width: 4px;
+}
+.ai-action-row {
+  flex-direction: column; align-items: flex-start; gap: 10px;
+}
+.action-badge {
+  font-size: 0.72rem; padding: 6px 14px; border-radius: 6px;
+  align-self: flex-start;
+}
+.ai-reason { font-size: 0.8rem; line-height: 1.5; }
+
+/* ── Progress/countdown shell ── */
+.empty { padding: 28px 16px; font-size: 0.8rem; }
+
+/* ── Analytics table — horizontal scroll ── */
+.analytics-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -12px;
+  padding: 0 12px;
+}
+table { min-width: 600px; font-size: 0.72rem; }
+th, td { padding: 8px 10px; }
+
+/* ── Cards general ── */
+.card { padding: 14px 14px; border-radius: 10px; }
+.card-title { font-size: 0.65rem; }
+
+/* ── Today toggle — bigger tap target ── */
+#today-toggle-track {
+  width: 44px; height: 24px;
+}
+#today-toggle-thumb {
+  width: 18px; height: 18px;
+}
+
+/* ── Buttons in flex rows — full width stacking ── */
+.flex-row { gap: 8px; }
+.flex-row .btn { flex: 1; min-width: 0; text-align: center; }
+
+/* ── Input fields ── */
+input[type=number], input[type=text] {
+  font-size: 0.82rem; padding: 8px 10px;
+  border-radius: 6px;
+}
+select { font-size: 0.75rem; padding: 7px 10px; }
+
+/* ── Version stamp ── */
+.version-stamp { font-size: 7px; bottom: 6px; right: 8px; }
+
+/* ── Probability bars on match cards ── */
+.mkt-spread-bar { height: 4px; margin: 6px 0 8px; }
+
+/* ── Toast notifications ── */
+.toast {
+  bottom: 80px; /* above iOS home bar */
+  right: 12px; left: 12px;
+  max-width: none;
+  font-size: 0.72rem;
+}
+
+/* ── Safe area insets (iPhone X+) ── */
+body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.topbar {
+  padding-top: max(8px, env(safe-area-inset-top));
+}
+```
+
+}
 </style>
 
 </head>
@@ -481,7 +666,7 @@ background: var(–card); color: var(–mid); white-space: nowrap;
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.5.0</div>
+<div class="version-stamp">KALSHI/EDGE v1.5.2</div>
 
 <script>
 'use strict';
@@ -1102,15 +1287,31 @@ async function analyzeMarkets() {
   var grouped       = groupMatchEvents(fetchedMarkets);
   var matchGroups   = grouped.matchGroups;
   var singles       = grouped.singles;
+  // Filter to today only if toggle is on
   var analyzeGroups = todayFilterOn
     ? matchGroups.filter(function(mg){ return isToday(mg.event_ticker); })
     : matchGroups;
+
+  // ── Strip blowouts: drop any matchup where either side is >= 95¢ ─────────
+  // A 95¢ favourite means a ~5¢ dog — market has already decided, no edge to find.
+  // Junk-time games, injury-ravaged underdogs, etc. all get caught here.
+  analyzeGroups = analyzeGroups.filter(function(mg) {
+    var homeAsk = (mg.home && mg.home.yes_ask) || 0;
+    var awayAsk = (mg.away && mg.away.yes_ask) || 0;
+    var tieAsk  = (mg.tie  && mg.tie.yes_ask)  || 0;
+    var maxPrice = Math.max(homeAsk, awayAsk, tieAsk);
+    return maxPrice > 0 && maxPrice < 95;
+  });
+
+  // ── Sort by volume descending — most-traded games first ──────────────────
+  // High volume = more public attention + more available data = more exploitable emotion.
+  analyzeGroups.sort(function(a, b){ return (b.totalVol||0) - (a.totalVol||0); });
 
   var today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
   var MATCH_BATCH       = 15;
   var SINGLES_PER_BATCH = 10;
-  var RATE_LIMIT_WAIT   = 120;
+  var RATE_LIMIT_WAIT   = 67;
   var MAX_RETRIES       = 3;
 
   var singlesRanked = singles.slice().sort(function(a,b){ return (b.volume_24h||0)-(a.volume_24h||0); });
@@ -1126,6 +1327,12 @@ async function analyzeMarkets() {
   }
 
   var totalBatches = batches.length;
+
+  // How many blowouts were dropped
+  var totalGroups  = todayFilterOn
+    ? matchGroups.filter(function(mg){ return isToday(mg.event_ticker); }).length
+    : matchGroups.length;
+  var blowoutsDropped = totalGroups - analyzeGroups.length;
 
   // Upfront ETA: ~25s per batch + 8s cooldown between
   var estSecs = totalBatches * 25 + Math.max(0, totalBatches - 1) * 8;
@@ -1147,10 +1354,14 @@ async function analyzeMarkets() {
     '</div>';
   }
 
-  // Show initial ETA
+  // Show initial ETA + blowout filter summary
+  var filterNote = blowoutsDropped > 0
+    ? '<div style="font-size:0.68rem;color:var(--dim);margin-top:2px;">⚡ '+blowoutsDropped+' blowout'+(blowoutsDropped>1?'s':'')+' removed (>95¢ favourite) · sorted by volume</div>'
+    : '';
   resultsEl.innerHTML = progressHTML(0,
-    '<div style="font-family:var(--mono);font-size:0.85rem;font-weight:700;color:var(--yellow);">🤖 Scanning '+analyzeGroups.length+' matchups</div>'+
-    '<div style="font-size:0.72rem;color:var(--mid);margin-top:3px;">'+totalBatches+' batch'+(totalBatches>1?'es':'')+' · est. '+etaStr+'</div>'
+    '<div style="font-family:var(--mono);font-size:0.85rem;font-weight:700;color:var(--yellow);">🤖 Scanning '+analyzeGroups.length+' contested matchups</div>'+
+    '<div style="font-size:0.72rem;color:var(--mid);margin-top:3px;">'+totalBatches+' batch'+(totalBatches>1?'es':'')+' · est. '+etaStr+'</div>'+
+    filterNote
   , 0);
 
   // ── Non-destructive countdown — updates shell, never wipes plays ──────────
@@ -1213,8 +1424,9 @@ async function analyzeMarkets() {
           'Today: '+today+'. Expert Kalshi sports prediction market trader.\n'+
           'Batch '+batchNum+'/'+totalBatches+' — '+sz+' markets:\n\n'+
           batchText(batch, batchNum)+'\n\n'+
-          'Prices in cents (50¢=50% prob). TODAY = live/imminent, prioritize.\n'+
-          'Search for news. Pick TOP 5 best value plays from THIS batch.\n'+
+          'Prices in cents (50¢=50% prob). Markets pre-filtered: blowouts (>95¢ fav) removed. Sorted by volume (most-traded first = more data/emotion).\n'+
+          'TODAY = live/imminent. Search for news. Find CONTESTED games with clear edge — momentum, injuries, home advantage, line moves.\n'+
+          'Pick TOP 5 best value plays from THIS batch.\n'+
           'For matches specify side: HOME, DRAW, or AWAY.\n\n'+
           'JSON only, no markdown:\n'+
           '{"plays":[{"ticker":"KXEXAMPLE-26MAR07TEAMB-TEAMB","side":"HOME","entry_price":45,"true_prob":58,"edge":13,"confidence":80,"reason":"one sentence with evidence"}],"summary":"1 sentence"}'
