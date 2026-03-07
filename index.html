@@ -467,7 +467,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.4.4</div>
+<div class="version-stamp">KALSHI/EDGE v1.4.5</div>
 
 <script>
 'use strict';
@@ -492,7 +492,11 @@ var seriesSlugCache = {
   'KXNBASPREAD':  'pro-basketball-spread',
   'KXNBATOTAL':   'pro-basketball-total-points',
   'KXNBA1HSPREAD':'pro-basketball-1st-half-spread',
-  // College Basketball
+  // College Basketball - Women
+  'KXNCAAWBGAME':   'college-basketball-womens-game',
+  'KXNCAAWBSPREAD': 'womens-college-basketball-spread',
+  'KXNCAAWBTOTAL':  'womens-college-basketball-total-points',
+  // College Basketball - Men
   'KXNCAAMBGAME':   'mens-college-basketball-mens-game',
   'KXNCAAMBSPREAD': 'mens-college-basketball-spread',
   // Baseball
@@ -1280,22 +1284,37 @@ async function fetchMarkets() {
     btn.disabled = false; progressWrap.style.display = 'none'; return;
   }
 
-  // Step 2: Fetch markets for each series in parallel batches of 5
+  // Step 2: Fetch ALL markets for each series, following pagination cursors
+  // Some series (e.g. KXNCAAMBGAME during March Madness) have 200+ markets across multiple pages
   var allMarkets = [];
-  var BATCH = 5;
-  var totalBatches = Math.ceil(allSeries.length / BATCH);
+  var BATCH = 4;  // parallel series fetches
+
+  // Fetch all pages for one series ticker
+  async function fetchAllMarketsForSeries(ticker) {
+    var markets = [];
+    var cursor = null;
+    var pages = 0;
+    do {
+      var path = '/markets?status=open&limit=200&series_ticker=' + ticker;
+      if (cursor) path += '&cursor=' + encodeURIComponent(cursor);
+      trackApiCall('kalshi');
+      var resp = await fetch(proxy + '/kalshi-proxy?path=' + encodeURIComponent(path))
+        .then(function(r) { return r.ok ? r.json() : {markets:[]}; })
+        .catch(function() { return {markets:[]}; });
+      (resp.markets || []).forEach(function(m) { markets.push(m); });
+      cursor = resp.cursor || null;
+      pages++;
+    } while (cursor && pages < 10); // safety cap: max 10 pages = 2000 markets/series
+    return markets;
+  }
 
   for (var bi = 0; bi < allSeries.length; bi += BATCH) {
     var batch = allSeries.slice(bi, bi + BATCH);
-    var fetches = batch.map(function(s) {
-      trackApiCall('kalshi');
-      return fetch(proxy + '/kalshi-proxy?path=' + encodeURIComponent('/markets?status=open&limit=100&series_ticker=' + s.ticker))
-        .then(function(r) { return r.ok ? r.json() : {markets:[]}; })
-        .catch(function() { return {markets:[]}; });
-    });
-    var results = await Promise.all(fetches);
-    results.forEach(function(d) {
-      (d.markets||[]).forEach(function(m) {
+    var batchResults = await Promise.all(batch.map(function(s) {
+      return fetchAllMarketsForSeries(s.ticker);
+    }));
+    batchResults.forEach(function(mkts) {
+      mkts.forEach(function(m) {
         if (m.yes_ask > 0 || m.yes_bid > 0) allMarkets.push(m);
       });
     });
