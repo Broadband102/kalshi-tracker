@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -28,207 +29,208 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
 
-  /* ── TOP BAR ── */
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 24px; border-bottom: 1px solid var(--border);
-    background: var(--surface); position: sticky; top: 0; z-index: 100;
-  }
-  .topbar-logo { font-family: var(--mono); font-size: 1rem; font-weight: 700; color: var(--blue); letter-spacing: 0.15em; }
-  .topbar-logo span { color: var(--mid); font-weight: 400; }
-  .cost-badge {
-    font-family: var(--mono); font-size: 0.7rem; color: var(--mid);
-    background: var(--card); border: 1px solid var(--border); border-radius: 4px;
-    padding: 4px 10px; display: flex; gap: 16px;
-  }
-  .cost-badge b { color: var(--text); }
-  .proxy-input {
-    background: var(--bg); border: 1px solid var(--border); color: var(--text);
-    border-radius: 4px; padding: 4px 10px; font-family: var(--mono); font-size: 0.7rem;
-    width: 280px;
-  }
-  .proxy-input::placeholder { color: var(--dim); }
+/* ── TOP BAR ── */
+.topbar {
+display: flex; align-items: center; justify-content: space-between;
+padding: 12px 24px; border-bottom: 1px solid var(–border);
+background: var(–surface); position: sticky; top: 0; z-index: 100;
+}
+.topbar-logo { font-family: var(–mono); font-size: 1rem; font-weight: 700; color: var(–blue); letter-spacing: 0.15em; }
+.topbar-logo span { color: var(–mid); font-weight: 400; }
+.cost-badge {
+font-family: var(–mono); font-size: 0.7rem; color: var(–mid);
+background: var(–card); border: 1px solid var(–border); border-radius: 4px;
+padding: 4px 10px; display: flex; gap: 16px;
+}
+.cost-badge b { color: var(–text); }
+.proxy-input {
+background: var(–bg); border: 1px solid var(–border); color: var(–text);
+border-radius: 4px; padding: 4px 10px; font-family: var(–mono); font-size: 0.7rem;
+width: 280px;
+}
+.proxy-input::placeholder { color: var(–dim); }
 
-  /* ── TABS ── */
-  .tabs {
-    display: flex; gap: 0; border-bottom: 1px solid var(--border);
-    background: var(--surface); padding: 0 24px;
-    overflow-x: auto;
-  }
-  .tab {
-    font-family: var(--sans); font-size: 0.82rem; font-weight: 500;
-    color: var(--mid); padding: 12px 20px; cursor: pointer;
-    border-bottom: 2px solid transparent; transition: all 0.15s;
-    white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none;
-  }
-  .tab:hover { color: var(--text); }
-  .tab.on { color: var(--blue); border-bottom-color: var(--blue); }
+/* ── TABS ── */
+.tabs {
+display: flex; gap: 0; border-bottom: 1px solid var(–border);
+background: var(–surface); padding: 0 24px;
+overflow-x: auto;
+}
+.tab {
+font-family: var(–sans); font-size: 0.82rem; font-weight: 500;
+color: var(–mid); padding: 12px 20px; cursor: pointer;
+border-bottom: 2px solid transparent; transition: all 0.15s;
+white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none;
+}
+.tab:hover { color: var(–text); }
+.tab.on { color: var(–blue); border-bottom-color: var(–blue); }
 
-  /* ── PANELS ── */
-  .panel { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
-  .panel.on { display: block; }
+/* ── PANELS ── */
+.panel { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
+.panel.on { display: block; }
 
-  /* ── CARDS ── */
-  .card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; padding: 20px; margin-bottom: 16px;
-  }
-  .card-title { font-family: var(--mono); font-size: 0.75rem; font-weight: 700;
-    color: var(--mid); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px; }
+/* ── CARDS ── */
+.card {
+background: var(–card); border: 1px solid var(–border);
+border-radius: 8px; padding: 20px; margin-bottom: 16px;
+}
+.card-title { font-family: var(–mono); font-size: 0.75rem; font-weight: 700;
+color: var(–mid); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px; }
 
-  /* ── BUTTONS ── */
-  .btn {
-    font-family: var(--mono); font-size: 0.75rem; font-weight: 700;
-    padding: 8px 16px; border-radius: 4px; cursor: pointer;
-    border: 1px solid var(--border2); background: var(--surface); color: var(--text);
-    transition: all 0.15s; letter-spacing: 0.05em;
-  }
-  .btn:hover { border-color: var(--blue); color: var(--blue); }
-  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-blue { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn-blue:hover { background: #388bfd; border-color: #388bfd; color: #fff; }
-  .btn-green { background: rgba(63,185,80,0.15); border-color: var(--green); color: var(--green); }
-  .btn-green:hover { background: rgba(63,185,80,0.25); }
-  .btn-red { background: rgba(248,81,73,0.15); border-color: var(--red); color: var(--red); }
-  .btn-red:hover { background: rgba(248,81,73,0.25); }
-  .btn-ghost { background: transparent; border-color: var(--border2); color: var(--mid); }
-  .btn-ghost:hover { border-color: var(--text); color: var(--text); }
-  .btn.on { background: rgba(88,166,255,0.15); border-color: var(--blue); color: var(--blue); }
+/* ── BUTTONS ── */
+.btn {
+font-family: var(–mono); font-size: 0.75rem; font-weight: 700;
+padding: 8px 16px; border-radius: 4px; cursor: pointer;
+border: 1px solid var(–border2); background: var(–surface); color: var(–text);
+transition: all 0.15s; letter-spacing: 0.05em;
+}
+.btn:hover { border-color: var(–blue); color: var(–blue); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-blue { background: var(–accent); border-color: var(–accent); color: #fff; }
+.btn-blue:hover { background: #388bfd; border-color: #388bfd; color: #fff; }
+.btn-green { background: rgba(63,185,80,0.15); border-color: var(–green); color: var(–green); }
+.btn-green:hover { background: rgba(63,185,80,0.25); }
+.btn-red { background: rgba(248,81,73,0.15); border-color: var(–red); color: var(–red); }
+.btn-red:hover { background: rgba(248,81,73,0.25); }
+.btn-ghost { background: transparent; border-color: var(–border2); color: var(–mid); }
+.btn-ghost:hover { border-color: var(–text); color: var(–text); }
+.btn.on { background: rgba(88,166,255,0.15); border-color: var(–blue); color: var(–blue); }
 
-  /* ── PORTFOLIO TAB ── */
-  .portfolio-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-  .stat-box { background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; padding: 14px 16px; }
-  .stat-label { font-family: var(--mono); font-size: 0.65rem; color: var(--dim);
-    text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
-  .stat-val { font-family: var(--mono); font-size: 1.3rem; font-weight: 700; color: var(--text); }
+/* ── PORTFOLIO TAB ── */
+.portfolio-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat-box { background: var(–surface); border: 1px solid var(–border);
+border-radius: 6px; padding: 14px 16px; }
+.stat-label { font-family: var(–mono); font-size: 0.65rem; color: var(–dim);
+text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px; }
+.stat-val { font-family: var(–mono); font-size: 1.3rem; font-weight: 700; color: var(–text); }
 
-  .pos-list { display: flex; flex-direction: column; gap: 8px; }
-  .pos-row {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; padding: 14px 16px;
-    display: flex; align-items: center; gap: 16px;
-    border-left: 3px solid var(--border2);
-  }
-  .pos-market { font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 2px; }
-  .pos-meta { font-family: var(--mono); font-size: 0.68rem; color: var(--mid); }
-  .pos-pnl { font-family: var(--mono); font-size: 0.9rem; font-weight: 700; text-align: right; }
-  .pos-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
-  .pbtn {
-    font-family: var(--mono); font-size: 0.7rem; padding: 5px 10px;
-    border-radius: 4px; cursor: pointer; border: 1px solid var(--border2);
-    background: var(--card); color: var(--mid); text-decoration: none;
-    transition: all 0.15s; white-space: nowrap;
-  }
-  .pbtn:hover { border-color: var(--blue); color: var(--blue); }
-  .pbtn-red:hover { border-color: var(--red); color: var(--red); }
+.pos-list { display: flex; flex-direction: column; gap: 8px; }
+.pos-row {
+background: var(–surface); border: 1px solid var(–border);
+border-radius: 6px; padding: 14px 16px;
+display: flex; align-items: center; gap: 16px;
+border-left: 3px solid var(–border2);
+}
+.pos-market { font-size: 0.85rem; font-weight: 600; color: var(–text); margin-bottom: 2px; }
+.pos-meta { font-family: var(–mono); font-size: 0.68rem; color: var(–mid); }
+.pos-pnl { font-family: var(–mono); font-size: 0.9rem; font-weight: 700; text-align: right; }
+.pos-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.pbtn {
+font-family: var(–mono); font-size: 0.7rem; padding: 5px 10px;
+border-radius: 4px; cursor: pointer; border: 1px solid var(–border2);
+background: var(–card); color: var(–mid); text-decoration: none;
+transition: all 0.15s; white-space: nowrap;
+}
+.pbtn:hover { border-color: var(–blue); color: var(–blue); }
+.pbtn-red:hover { border-color: var(–red); color: var(–red); }
 
-  /* ── AI RESULTS ── */
-  .ai-card {
-    border-radius: 8px; padding: 14px 16px; margin-bottom: 8px;
-    border: 1px solid var(--border); border-left: 3px solid var(--border2);
-    background: var(--surface);
-  }
-  .ai-action-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  .action-badge {
-    font-family: var(--mono); font-size: 0.78rem; font-weight: 700;
-    padding: 3px 12px; border-radius: 4px;
-  }
-  .ai-reason { font-size: 0.82rem; color: var(--mid); }
-  .ai-prices { font-family: var(--mono); font-size: 0.68rem; color: var(--dim); margin-top: 4px; }
+/* ── AI RESULTS ── */
+.ai-card {
+border-radius: 8px; padding: 14px 16px; margin-bottom: 8px;
+border: 1px solid var(–border); border-left: 3px solid var(–border2);
+background: var(–surface);
+}
+.ai-action-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.action-badge {
+font-family: var(–mono); font-size: 0.78rem; font-weight: 700;
+padding: 3px 12px; border-radius: 4px;
+}
+.ai-reason { font-size: 0.82rem; color: var(–mid); }
+.ai-prices { font-family: var(–mono); font-size: 0.68rem; color: var(–dim); margin-top: 4px; }
 
-  /* ── MARKET BROWSER ── */
-  .cat-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-  .tag-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; min-height: 32px; }
-  .tag-btn {
-    font-family: var(--mono); font-size: 0.65rem; padding: 3px 10px;
-    border-radius: 3px; cursor: pointer; border: 1px solid var(--border);
-    background: var(--bg); color: var(--dim); transition: all 0.15s;
-  }
-  .tag-btn:hover { border-color: var(--border2); color: var(--mid); }
-  .tag-btn.on { border-color: var(--purple); color: var(--purple); background: rgba(188,140,255,0.08); }
+/* ── MARKET BROWSER ── */
+.cat-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.tag-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; min-height: 32px; }
+.tag-btn {
+font-family: var(–mono); font-size: 0.65rem; padding: 3px 10px;
+border-radius: 3px; cursor: pointer; border: 1px solid var(–border);
+background: var(–bg); color: var(–dim); transition: all 0.15s;
+}
+.tag-btn:hover { border-color: var(–border2); color: var(–mid); }
+.tag-btn.on { border-color: var(–purple); color: var(–purple); background: rgba(188,140,255,0.08); }
 
-  .market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
-  .mkt-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; padding: 14px 16px; transition: border-color 0.15s;
-  }
-  .mkt-card:hover { border-color: var(--border2); }
-  .mkt-title { font-size: 0.83rem; font-weight: 500; color: var(--text); margin-bottom: 6px; line-height: 1.35; }
-  .mkt-meta { font-family: var(--mono); font-size: 0.65rem; color: var(--dim); margin-bottom: 8px; }
-  .mkt-prices { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-  .price-pill {
-    font-family: var(--mono); font-size: 0.72rem; font-weight: 700;
-    padding: 3px 8px; border-radius: 4px; background: var(--card);
-    border: 1px solid var(--border);
-  }
-  .price-yes { color: var(--green); border-color: rgba(63,185,80,0.3); }
-  .price-no  { color: var(--red);   border-color: rgba(248,81,73,0.3); }
-  .price-vol { color: var(--dim); font-size: 0.62rem; margin-left: auto; }
-  .mkt-link {
-    font-family: var(--mono); font-size: 0.68rem; color: var(--blue);
-    text-decoration: none; display: inline-block;
-  }
-  .mkt-link:hover { text-decoration: underline; }
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+.mkt-card {
+background: var(–surface); border: 1px solid var(–border);
+border-radius: 6px; padding: 14px 16px; transition: border-color 0.15s;
+}
+.mkt-card:hover { border-color: var(–border2); }
+.mkt-title { font-size: 0.83rem; font-weight: 500; color: var(–text); margin-bottom: 6px; line-height: 1.35; }
+.mkt-meta { font-family: var(–mono); font-size: 0.65rem; color: var(–dim); margin-bottom: 8px; }
+.mkt-prices { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.price-pill {
+font-family: var(–mono); font-size: 0.72rem; font-weight: 700;
+padding: 3px 8px; border-radius: 4px; background: var(–card);
+border: 1px solid var(–border);
+}
+.price-yes { color: var(–green); border-color: rgba(63,185,80,0.3); }
+.price-no  { color: var(–red);   border-color: rgba(248,81,73,0.3); }
+.price-vol { color: var(–dim); font-size: 0.62rem; margin-left: auto; }
+.mkt-link {
+font-family: var(–mono); font-size: 0.68rem; color: var(–blue);
+text-decoration: none; display: inline-block;
+}
+.mkt-link:hover { text-decoration: underline; }
 
-  /* ── PROGRESS / LOADING ── */
-  .progress-bar {
-    height: 3px; background: var(--border); border-radius: 2px;
-    overflow: hidden; margin: 12px 0;
-  }
-  .progress-fill {
-    height: 100%; background: var(--blue);
-    border-radius: 2px; transition: width 0.3s; width: 0%;
-  }
-  .spinner { display: inline-block; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ── PROGRESS / LOADING ── */
+.progress-bar {
+height: 3px; background: var(–border); border-radius: 2px;
+overflow: hidden; margin: 12px 0;
+}
+.progress-fill {
+height: 100%; background: var(–blue);
+border-radius: 2px; transition: width 0.3s; width: 0%;
+}
+.spinner { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── MISC ── */
-  .empty { text-align: center; padding: 40px; color: var(--dim); font-size: 0.85rem; font-family: var(--mono); }
-  .toast {
-    position: fixed; bottom: 24px; right: 24px; z-index: 999;
-    background: var(--card); border: 1px solid var(--border2);
-    border-radius: 6px; padding: 10px 16px; font-family: var(--mono);
-    font-size: 0.75rem; color: var(--text); animation: slideIn 0.2s ease;
-    max-width: 320px;
-  }
-  @keyframes slideIn { from { opacity:0; transform: translateY(8px); } }
-  .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
-  .flex-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .ai-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    padding: 14px 16px; font-size: 0.83rem; color: var(--mid); line-height: 1.6; }
-  input[type=number], input[type=text] {
-    background: var(--bg); border: 1px solid var(--border2); color: var(--text);
-    border-radius: 4px; padding: 6px 10px; font-family: var(--mono); font-size: 0.78rem; width: 80px;
-  }
-  .badge { font-family: var(--mono); font-size: 0.65rem; padding: 2px 7px; border-radius: 3px;
-    background: var(--card); border: 1px solid var(--border); color: var(--dim); }
-  select {
-    background: var(--bg); border: 1px solid var(--border2); color: var(--text);
-    border-radius: 4px; padding: 5px 8px; font-family: var(--mono); font-size: 0.75rem;
-  }
-  .version-stamp {
-    position: fixed; bottom: 8px; right: 12px;
-    font-family: var(--mono); font-size: 9px; color: var(--dim);
-    letter-spacing: 0.08em; pointer-events: none; z-index: 200;
-  }
-  /* Market card clickable */
-  .mkt-card { cursor: pointer; }
-  .mkt-card:hover .mkt-title { color: var(--blue); }
-  /* Richer card layout */
-  .mkt-outcome-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-  .outcome-pill {
-    font-family: var(--mono); font-size: 0.68rem; padding: 3px 9px;
-    border-radius: 12px; border: 1px solid var(--border);
-    background: var(--card); color: var(--mid); white-space: nowrap;
-  }
-  .outcome-pill.yes { color: var(--green); border-color: rgba(63,185,80,0.35); background: rgba(63,185,80,0.07); }
-  .outcome-pill.no  { color: var(--red);   border-color: rgba(248,81,73,0.35);  background: rgba(248,81,73,0.07); }
-  .outcome-pill.mid { color: var(--yellow); border-color: rgba(210,153,34,0.35); background: rgba(210,153,34,0.07); }
-  .mkt-closes { font-family: var(--mono); font-size: 0.62rem; color: var(--dim); }
-  .mkt-spread-bar { height: 3px; background: var(--border); border-radius: 2px; margin: 5px 0 7px; overflow: hidden; }
-  .mkt-spread-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--red), var(--yellow), var(--green)); }
+/* ── MISC ── */
+.empty { text-align: center; padding: 40px; color: var(–dim); font-size: 0.85rem; font-family: var(–mono); }
+.toast {
+position: fixed; bottom: 24px; right: 24px; z-index: 999;
+background: var(–card); border: 1px solid var(–border2);
+border-radius: 6px; padding: 10px 16px; font-family: var(–mono);
+font-size: 0.75rem; color: var(–text); animation: slideIn 0.2s ease;
+max-width: 320px;
+}
+@keyframes slideIn { from { opacity:0; transform: translateY(8px); } }
+.divider { border: none; border-top: 1px solid var(–border); margin: 16px 0; }
+.flex-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ai-box { background: var(–bg); border: 1px solid var(–border); border-radius: 6px;
+padding: 14px 16px; font-size: 0.83rem; color: var(–mid); line-height: 1.6; }
+input[type=number], input[type=text] {
+background: var(–bg); border: 1px solid var(–border2); color: var(–text);
+border-radius: 4px; padding: 6px 10px; font-family: var(–mono); font-size: 0.78rem; width: 80px;
+}
+.badge { font-family: var(–mono); font-size: 0.65rem; padding: 2px 7px; border-radius: 3px;
+background: var(–card); border: 1px solid var(–border); color: var(–dim); }
+select {
+background: var(–bg); border: 1px solid var(–border2); color: var(–text);
+border-radius: 4px; padding: 5px 8px; font-family: var(–mono); font-size: 0.75rem;
+}
+.version-stamp {
+position: fixed; bottom: 8px; right: 12px;
+font-family: var(–mono); font-size: 9px; color: var(–dim);
+letter-spacing: 0.08em; pointer-events: none; z-index: 200;
+}
+/* Market card clickable */
+.mkt-card { cursor: pointer; }
+.mkt-card:hover .mkt-title { color: var(–blue); }
+/* Richer card layout */
+.mkt-outcome-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.outcome-pill {
+font-family: var(–mono); font-size: 0.68rem; padding: 3px 9px;
+border-radius: 12px; border: 1px solid var(–border);
+background: var(–card); color: var(–mid); white-space: nowrap;
+}
+.outcome-pill.yes { color: var(–green); border-color: rgba(63,185,80,0.35); background: rgba(63,185,80,0.07); }
+.outcome-pill.no  { color: var(–red);   border-color: rgba(248,81,73,0.35);  background: rgba(248,81,73,0.07); }
+.outcome-pill.mid { color: var(–yellow); border-color: rgba(210,153,34,0.35); background: rgba(210,153,34,0.07); }
+.mkt-closes { font-family: var(–mono); font-size: 0.62rem; color: var(–dim); }
+.mkt-spread-bar { height: 3px; background: var(–border); border-radius: 2px; margin: 5px 0 7px; overflow: hidden; }
+.mkt-spread-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(–red), var(–yellow), var(–green)); }
 </style>
+
 </head>
 <body>
 
@@ -249,6 +251,7 @@
 </div>
 
 <!-- ══════════════ PORTFOLIO TAB ══════════════ -->
+
 <div class="panel on" id="panel-portfolio">
   <div class="card">
     <div class="card-title">Portfolio Overview</div>
@@ -301,6 +304,7 @@
 </div>
 
 <!-- ══════════════ ANALYTICS TAB ══════════════ -->
+
 <div class="panel" id="panel-analytics">
   <div class="card">
     <div class="card-title">📊 P&amp;L Analytics</div>
@@ -333,6 +337,7 @@
   </div>
 
   <!-- Stats -->
+
   <div id="analytics-stats" style="display:none;">
     <div class="portfolio-grid" style="margin-bottom:12px;">
       <div class="stat-box" style="border-color:var(--green);">
@@ -373,22 +378,26 @@
       </div>
     </div>
 
-    <!-- AI result -->
-    <div id="analytics-ai-result" style="display:none;margin-bottom:12px;"></div>
+```
+<!-- AI result -->
+<div id="analytics-ai-result" style="display:none;margin-bottom:12px;"></div>
 
-    <!-- Activity table -->
-    <div class="card" style="padding:0;overflow:hidden;">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);">
-        <div style="font-family:var(--mono);font-size:0.75rem;font-weight:700;color:var(--mid);">ACTIVITY LOG</div>
-        <span id="analytics-count" style="font-size:0.72rem;color:var(--dim);"></span>
-      </div>
-      <div id="analytics-table" style="max-height:520px;overflow-y:auto;"></div>
-    </div>
+<!-- Activity table -->
+<div class="card" style="padding:0;overflow:hidden;">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);">
+    <div style="font-family:var(--mono);font-size:0.75rem;font-weight:700;color:var(--mid);">ACTIVITY LOG</div>
+    <span id="analytics-count" style="font-size:0.72rem;color:var(--dim);"></span>
+  </div>
+  <div id="analytics-table" style="max-height:520px;overflow-y:auto;"></div>
+</div>
+```
+
   </div>
   <div id="analytics-empty" class="empty">Import your Trade CSV and/or Settlement CSV from Kalshi to see your P&amp;L breakdown.</div>
 </div>
 
 <!-- ══════════════ AI ADVISOR TAB ══════════════ -->
+
 <div class="panel" id="panel-advisor">
   <div class="card">
     <div class="card-title">AI Hold / Sell Advisor</div>
@@ -411,6 +420,7 @@
 </div>
 
 <!-- ══════════════ MARKET BROWSER TAB ══════════════ -->
+
 <div class="panel" id="panel-browse">
   <div class="card">
     <div class="card-title">Live Market Browser</div>
@@ -418,42 +428,46 @@
       Select a category, then optionally filter by subcategory tag. Click <strong style="color:var(--text)">Fetch Markets</strong> to pull live prices from Kalshi.
     </div>
 
-    <!-- Category buttons -->
-    <div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;">Category</div>
-    <div class="cat-buttons" id="cat-buttons">
-      <!-- Populated by JS -->
-    </div>
+```
+<!-- Category buttons -->
+<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;">Category</div>
+<div class="cat-buttons" id="cat-buttons">
+  <!-- Populated by JS -->
+</div>
 
-    <!-- Tag / subcategory buttons -->
-    <div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;" id="tag-label" style="display:none;">Subcategory / Tag</div>
-    <div class="tag-buttons" id="tag-buttons"></div>
+<!-- Tag / subcategory buttons -->
+<div style="font-family:var(--mono);font-size:0.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;" id="tag-label" style="display:none;">Subcategory / Tag</div>
+<div class="tag-buttons" id="tag-buttons"></div>
 
-    <hr class="divider">
-    <div class="flex-row" style="flex-wrap:wrap;gap:8px;align-items:center;">
-      <button class="btn btn-blue" id="btn-fetch-markets" onclick="fetchMarkets()">⚡ Fetch Markets</button>
-      <button class="btn btn-green" id="btn-analyze-markets" onclick="analyzeMarkets()" style="display:none;">🤖 AI: Best Plays</button>
-      <!-- Today's Games toggle -->
-      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;" title="Show only today's straight head-to-head winner games — hides spreads, totals, props, and future games">
-        <div id="today-toggle-track" onclick="toggleTodayFilter()" style="width:32px;height:18px;border-radius:9px;background:var(--border2);position:relative;transition:background 0.2s;flex-shrink:0;">
-          <div id="today-toggle-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
-        </div>
-        <span id="today-toggle-label" style="font-family:var(--mono);font-size:0.72rem;color:var(--mid);">TODAY'S MATCHUPS</span>
-      </label>
-      <select id="sort-select" onchange="sortMarkets()">
-        <option value="volume">Sort: Volume</option>
-        <option value="yes_asc">Sort: Yes Price ↑</option>
-        <option value="yes_desc">Sort: Yes Price ↓</option>
-        <option value="mid50">Sort: Closest to 50¢</option>
-        <option value="ai">Sort: AI Rank</option>
-      </select>
-      <span id="browse-count" class="badge">—</span>
+<hr class="divider">
+<div class="flex-row" style="flex-wrap:wrap;gap:8px;align-items:center;">
+  <button class="btn btn-blue" id="btn-fetch-markets" onclick="fetchMarkets()">⚡ Fetch Markets</button>
+  <button class="btn btn-green" id="btn-analyze-markets" onclick="analyzeMarkets()" style="display:none;">🤖 AI: Best Plays</button>
+  <!-- Today's Games toggle -->
+  <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;" title="Show only today's straight head-to-head winner games — hides spreads, totals, props, and future games">
+    <div id="today-toggle-track" onclick="toggleTodayFilter()" style="width:32px;height:18px;border-radius:9px;background:var(--border2);position:relative;transition:background 0.2s;flex-shrink:0;">
+      <div id="today-toggle-thumb" style="width:14px;height:14px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
     </div>
-    <div class="progress-bar" id="browse-progress-wrap" style="display:none;">
-      <div class="progress-fill" id="browse-progress"></div>
-    </div>
+    <span id="today-toggle-label" style="font-family:var(--mono);font-size:0.72rem;color:var(--mid);">TODAY'S MATCHUPS</span>
+  </label>
+  <select id="sort-select" onchange="sortMarkets()">
+    <option value="volume">Sort: Volume</option>
+    <option value="yes_asc">Sort: Yes Price ↑</option>
+    <option value="yes_desc">Sort: Yes Price ↓</option>
+    <option value="mid50">Sort: Closest to 50¢</option>
+    <option value="ai">Sort: AI Rank</option>
+  </select>
+  <span id="browse-count" class="badge">—</span>
+</div>
+<div class="progress-bar" id="browse-progress-wrap" style="display:none;">
+  <div class="progress-fill" id="browse-progress"></div>
+</div>
+```
+
   </div>
 
   <!-- AI analysis results — shown above market grid when available -->
+
   <div id="ai-plays-wrap" style="display:none;" class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
       <div class="card-title" style="margin-bottom:0;">🤖 AI Best Plays</div>
@@ -467,7 +481,7 @@
   <div id="market-grid" class="market-grid"></div>
 </div>
 
-<div class="version-stamp">KALSHI/EDGE v1.4.7</div>
+<div class="version-stamp">KALSHI/EDGE v1.5.0</div>
 
 <script>
 'use strict';
@@ -1030,27 +1044,35 @@ async function runAdvisor() {
 // ── MARKET BROWSER ────────────────────────────────────────────────────────────
 // All categories + tags from live API scan
 var CATEGORIES = {
-  'Economics':            ['Inflation','Employment','Fed','Growth','Oil and energy','Housing','Layoffs','Bankruptcy & Defaults','Retail/consumer spending','International'],
-  'Politics':             ['US Elections','Congress','Trump','Foreign Elections','Culture war','Confirmations','Primaries','Biden','International'],
-  'Sports':               ['Football','Basketball','Baseball','Soccer','Hockey','Tennis','Boxing','Motorsport','Esports','Darts'],
+  // ── SPORTS: series-ticker based (no API tag filtering needed) ─────────────
+  'NCAA Basketball ♂':  { seriesTickers: ['KXNCAAMBGAME','KXNCAAMBSPREAD','KXNCAAMB1HWINNER'], label: '🏀 NCAA Men' },
+  'NCAA Basketball ♀':  { seriesTickers: ['KXNCAAWBGAME','KXNCAAWBSPREAD'], label: '🏀 NCAA Women' },
+  'NBA':                  { seriesTickers: ['KXNBAGAME','KXNBASPREAD','KXNBATOTAL','KXNBA1HSPREAD','KXNBA1HWINNER'], label: '🏀 NBA' },
+  'NHL':                  { seriesTickers: ['KXNHLGAME','KXNHLSPREAD','KXNHLTOTAL'], label: '🏒 NHL' },
+  'MLB':                  { seriesTickers: ['KXMLBGAME','KXMLBSPREAD','KXMLBTOTAL'], label: '⚾ MLB' },
+  'NFL':                  { seriesTickers: ['KXNFLGAME','KXNFLSPREAD','KXNFLTOTAL'], label: '🏈 NFL' },
+  'Premier League':       { seriesTickers: ['KXEPLGAME','KXEPLSPREAD'], label: '⚽ EPL' },
+  'Champions League':     { seriesTickers: ['KXUCLGAME','KXUCLSPREAD'], label: '⚽ UCL' },
+  'Soccer (Other)':       { seriesTickers: ['KXUEFAGAME','KXUELSPREAD','KXFACUPGAME','KXFACUPSPREAD','KXFACUPADVANCE',
+                              'KXSOCCERSPREAD','KXLIGAMXGAME','KXLIGAMXSPREAD','KXSERIEA','KXLIGUE1TOTAL',
+                              'KXUECLGAME','KXARGPREMDIVGAME','KXLIGAPORTUGALGAME','KXBELGIANPLGAME',
+                              'KXEKSTRAKLASAGAME','KXBUNDESLIGATOTAL'], label: '⚽ Soccer (Other)' },
+  'Tennis':               { seriesTickers: ['KXATPMATCH','KXWTAMATCH','KXATPEXACTMATCH','KXATPGAMESPREAD','KXATPGAMETOTAL'], label: '🎾 Tennis' },
+  'Golf':                 { seriesTickers: ['KXPGATOP10','KXPGAR2LEAD','KXPGAR1LEAD','KXDPWORLDTOURR1LEAD'], label: '⛳ Golf' },
+  'Motorsport':           { seriesTickers: ['KXF1RACE','KXF1POLE','KXF1POLEPOSITION','KXF1SPRINTFASTLAP','KXNASCARTOP10'], label: '🏎️ F1/NASCAR' },
+  // ── OTHER: API tag-based ──────────────────────────────────────────────────
+  'Economics':            ['Inflation','Employment','Fed','Growth','Oil and energy','Housing','Layoffs','Bankruptcy & Defaults'],
+  'Politics':             ['US Elections','Congress','Trump','Foreign Elections','Culture war','Confirmations','Primaries'],
   'Crypto':               ['BTC','ETH','SOL','XRP','DOGE','Hourly','15 min','Pre-Market'],
   'Financials':           ['S&P','Nasdaq','Treasuries','Fed','WTI','EUR/USD','USD/JPY','Daily'],
-  'Elections':            ['US Elections','Primaries','House','Foreign Elections','International elections','Trump','International'],
-  'Entertainment':        ['Movies','Television','Music','Awards','Grammys','SAG','Rotten Tomatoes','Video games','StockX','Music charts'],
-  'Companies':            ['CEOs','KPIs','AI Transfers','Product launches','IPOs','Elon Musk','GPT','Space'],
-  'Climate and Weather':  ['Daily temperature','High temp','Hurricanes','Natural disasters','Snow and rain','Climate change','Space','Global heat'],
-  'Science and Technology': ['AI','Space','Papers','Product launches','Energy','Medicine','Video games'],
-  'Health':               ['COVID','Vaccines','FDA Approval','Drug Prices','Disease spread','Other diseases','Health Tech'],
-  'Mentions':             ['Politicians','Sports','Entertainment','Earnings','SOTU'],
-  'World':                ['International politics','Foreign economies','GDP','Growth','Bills','Supply chain'],
-  'Financials':           ['S&P','Nasdaq','Fed','Treasuries','WTI','EUR/USD','Daily'],
-  'Transportation':       ['Airlines & aviation','CEOs','Supply chain'],
-  'Social':               ['Football'],
-  'Education':            [],
-  'Exotics':              ['Football','Basketball'],
+  'Entertainment':        ['Movies','Television','Music','Awards','Video games'],
+  'Companies':            ['CEOs','KPIs','Product launches','IPOs','Elon Musk','Space'],
+  'Climate & Weather':    ['Daily temperature','High temp','Hurricanes','Natural disasters','Snow and rain'],
+  'Science & Tech':       ['AI','Space','Papers','Energy','Medicine'],
+  'Health':               ['COVID','Vaccines','FDA Approval','Drug Prices','Disease spread'],
+  'World':                ['International politics','Foreign economies','GDP','Growth'],
 };
-// Deduplicate
-var CAT_KEYS = Object.keys(CATEGORIES).filter(function(v,i,a){ return a.indexOf(v)===i; });
+var CAT_KEYS = Object.keys(CATEGORIES);
 
 var selectedCat = '';
 var selectedTags = new Set();
@@ -1086,7 +1108,7 @@ async function analyzeMarkets() {
 
   var today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
-  var MATCH_BATCH       = 30;
+  var MATCH_BATCH       = 15;
   var SINGLES_PER_BATCH = 10;
   var RATE_LIMIT_WAIT   = 120;
   var MAX_RETRIES       = 3;
@@ -1300,25 +1322,46 @@ async function analyzeMarkets() {
 
 function buildCategoryButtons() {
   var wrap = document.getElementById('cat-buttons');
-  wrap.innerHTML = CAT_KEYS.map(function(cat) {
-    return '<button class="btn btn-ghost" onclick="selectCat(\'' + cat.replace(/'/g,"\\'") + '\')" data-cat="' + cat + '">' + cat + '</button>';
-  }).join('');
+  var sportCats = CAT_KEYS.filter(function(k){ return CATEGORIES[k] && CATEGORIES[k].seriesTickers; });
+  var otherCats = CAT_KEYS.filter(function(k){ return !CATEGORIES[k].seriesTickers; });
+
+  function makeBtn(cat) {
+    var def = CATEGORIES[cat];
+    var label = (def && def.label) ? def.label : cat;
+    return '<button class="btn btn-ghost" onclick="selectCat(\'' + cat.replace(/'/g,"\\'") + '\')" data-cat="' + cat + '">' + label + '</button>';
+  }
+
+  wrap.innerHTML =
+    '<div style="margin-bottom:4px;">' +
+      '<span style="font-size:0.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--mono);margin-right:6px;">Sports</span>' +
+      sportCats.map(makeBtn).join('') +
+    '</div>' +
+    '<div>' +
+      '<span style="font-size:0.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--mono);margin-right:6px;">Other</span>' +
+      otherCats.map(makeBtn).join('') +
+    '</div>';
 }
 
 function selectCat(cat) {
   selectedCat = cat;
   selectedTags.clear();
-  // Highlight selected cat button
   document.querySelectorAll('#cat-buttons .btn').forEach(function(b) {
     b.classList.toggle('on', b.dataset.cat === cat);
   });
-  // Build tag buttons
-  var tags = CATEGORIES[cat] || [];
-  var tagWrap = document.getElementById('tag-buttons');
-  document.getElementById('tag-label').style.display = tags.length ? '' : 'none';
-  tagWrap.innerHTML = tags.map(function(t) {
-    return '<button class="tag-btn" onclick="toggleTag(\'' + t.replace(/'/g,"\\'") + '\')" data-tag="' + t + '">' + t + '</button>';
-  }).join('');
+  var tagWrap  = document.getElementById('tag-buttons');
+  var tagLabel = document.getElementById('tag-label');
+  var catDef   = CATEGORIES[cat];
+  // Sports subcategories have seriesTickers — no tag filter needed
+  if (catDef && catDef.seriesTickers) {
+    tagLabel.style.display = 'none';
+    tagWrap.innerHTML = '';
+  } else {
+    var tags = catDef || [];
+    tagLabel.style.display = tags.length ? '' : 'none';
+    tagWrap.innerHTML = tags.map(function(t) {
+      return '<button class="tag-btn" onclick="toggleTag(\'' + t.replace(/'/g,"\\'") + '\')" data-tag="' + t + '">' + t + '</button>';
+    }).join('');
+  }
 }
 
 function toggleTag(tag) {
@@ -1349,7 +1392,10 @@ async function fetchMarkets() {
   var allSeries = [];
   try {
     trackApiCall('kalshi');
-    var r = await fetch(proxy + '/kalshi-proxy?path=' + encodeURIComponent('/series?limit=200&category=' + encodeURIComponent(selectedCat)));
+    // Sports subcategories are stored under the 'Sports' API category
+    var catDef2 = CATEGORIES[selectedCat];
+    var apiCat = (catDef2 && catDef2.seriesTickers) ? 'Sports' : selectedCat;
+    var r = await fetch(proxy + '/kalshi-proxy?path=' + encodeURIComponent('/series?limit=200&category=' + encodeURIComponent(apiCat)));
     var d = await r.json();
     allSeries = d.series || [];
 
@@ -1361,8 +1407,18 @@ async function fetchMarkets() {
       }
     });
 
-    // Filter by selected tags if any
-    if (selectedTags.size > 0) {
+    // Sports categories: filter to exact seriesTickers list
+    var catDef = CATEGORIES[selectedCat];
+    if (catDef && catDef.seriesTickers) {
+      // Ensure every ticker in the list is included (some may be in other API categories)
+      var existing = new Set(allSeries.map(function(s){ return s.ticker; }));
+      catDef.seriesTickers.forEach(function(tk) {
+        if (!existing.has(tk)) allSeries.push({ ticker: tk, title: tk, tags: [] });
+      });
+      var allowed = new Set(catDef.seriesTickers);
+      allSeries = allSeries.filter(function(s){ return allowed.has(s.ticker); });
+    } else if (selectedTags.size > 0) {
+      // Tag-based categories (Economics, Politics, etc.)
       allSeries = allSeries.filter(function(s) {
         return (s.tags||[]).some(function(t) { return selectedTags.has(t); });
       });
@@ -2072,5 +2128,6 @@ document.addEventListener('DOMContentLoaded', function() {
   showTab('portfolio');
 });
 </script>
+
 </body>
 </html>
